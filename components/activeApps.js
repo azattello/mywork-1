@@ -1,0 +1,249 @@
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import {View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, FlatList} from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+// import AppsList from './appsList';
+
+import axios from 'axios';
+import { API_URL } from '../config';
+
+
+export default function ActiveApps({navigation}) {
+
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        console.log('Fetching applications from:', `${API_URL}/api/applications`);
+        const res = await axios.get(`${API_URL}/api/applications`);
+        console.log('Response:', res.data);
+        if (res.data && res.data.success) {
+          const apps = res.data.data || [];
+          // keep only active applications (handle boolean/string/number cases)
+          const activeApps = apps.filter(a => a && (a.active === true || a.active === 'true' || a.active === 1 || a.active === '1'));
+          console.log('Filtered active apps:', activeApps);
+          setData(activeApps);
+        } else setData([]);
+      } catch (err) {
+        console.error('Error fetching applications:', err);
+        setData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const handlePress = ({ item }) => {
+    // Переход на новый экран и передача параметра
+    console.log(item);
+  };
+
+  const renderItem = ({ item }) => (
+    
+    <TouchableOpacity style={item.active === true ? styles.cardApp : styles.cardAppOff } onPress={handlePress}>
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.summ}>{item.summ} ₸</Text>
+      </View>
+      <Text style={styles.catalogName}>
+      {item.info}
+      </Text>
+      <View style={styles.info}>
+        <Text >8 откликов</Text>
+        <View style={styles.eyeInfo}>
+          <Ionicons size={15} name="eye-outline"></Ionicons>
+          <Text style={styles.infoText}>75</Text>
+        </View>
+      </View>
+      </TouchableOpacity>
+  );
+
+
+  
+
+  return (
+   
+        <View style={styles.main}>
+         {loading ? (
+           <View style={styles.loadingContainer}>
+             <Text>Загрузка заявок...</Text>
+           </View>
+         ) : data.length === 0 ? (
+           <View style={styles.emptyContainer}>
+             <Text>Нет активных заявок</Text>
+           </View>
+         ) : (
+          <FlatList
+            data={data}
+            renderItem={renderItem}
+            keyExtractor={(item) => String(item._id || item.id || item.title)}
+            style={styles.area}
+            showsVerticalScrollIndicator={false}
+          />
+         )}
+    
+
+        </View> 
+    
+);
+};
+
+const styles = StyleSheet.create({
+wrapper:{
+  display: 'flex',
+  width: '100%',
+  flex: 1,
+  flexDirection: 'column',
+  backgroundColor: '#F2F2F2'
+
+},
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 20
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 20
+  },
+header: {
+  backgroundColor: '#fff',
+},
+
+
+container: {
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  backgroundColor: '#fff',
+  width: '100%',
+  paddingHorizontal: 40,
+  paddingVertical: 20,
+
+  borderBottomWidth: 0.2,
+  borderColor: '#A7A7A7'
+},
+choice1:{
+  height: 50,
+  width: '45%',
+  marginLeft: 5,
+  backgroundColor: '#fff',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 10,
+
+  shadowColor: "#999696",
+  shadowOffset: {
+    width: 0,
+    height: 2,
+  },
+  shadowOpacity: 0.05,
+  shadowRadius: 1,
+  elevation: 10,
+},
+choiceText:{
+  color: '#fff',
+},
+choice2:{
+  height: 50,
+  width: '45%',
+  marginRight: 5,
+  backgroundColor: '#B23439',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 10,
+
+
+  shadowColor: "#999696",
+  shadowOffset: {
+    width: 0,
+    height: 2,
+  },
+  shadowOpacity: 0.05,
+  shadowRadius: 1,
+  elevation: 10,
+  },
+
+
+  main:{
+    flex: 1,
+    flexDirection: 'column',
+    width: '100%',
+    paddingHorizontal: 20,
+
+  },
+
+  cardApp:{
+    marginTop: 20,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    
+    shadowColor: "#888",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
+    elevation: 10,
+
+    flexDirection: 'column',
+    // alignItems: 'center',
+    // justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  cardAppOff:{
+    display: 'none',
+  },
+  titleContainer:{
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 0.4,
+    borderBottomColor: '#DA7D81',
+    paddingBottom: 10,
+
+  },
+  title:{
+    fontSize: 18,
+    textAlign: 'left',
+    fontWeight: '500',
+  },
+  summ:{
+    fontWeight: '500',
+    fontSize: 16,
+
+  },
+  catalogName:{
+    paddingVertical: 15,
+    fontSize: 16,
+  },
+  info:{
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+
+  },
+  eyeInfo:{
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  infoText:{
+    marginLeft: 10,
+  },
+  area: {
+    marginBottom: 10,
+  }
+
+
+});
