@@ -12,7 +12,7 @@ const generateRefreshToken = (user) => {
 };
 
 exports.register = async (req, res) => {
-  const { phone, password, name, surname, role } = req.body;
+  const { phone, password, name, surname, role, city, categories } = req.body;
   if (!phone || !password) return res.status(400).json({ success: false, message: 'Phone and password required' });
 
   const existing = await User.findOne({ phone });
@@ -21,7 +21,15 @@ exports.register = async (req, res) => {
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password, salt);
 
-  const user = new User({ phone, passwordHash, name, surname, role });
+  const user = new User({ 
+    phone, 
+    passwordHash, 
+    name, 
+    surname, 
+    role,
+    city: city || null,
+    categories: categories || []
+  });
   await user.save();
 
   const accessToken = generateAccessToken(user);
@@ -32,14 +40,29 @@ exports.register = async (req, res) => {
   const expiresAt = decoded && decoded.exp ? new Date(decoded.exp * 1000) : null;
   await RefreshToken.create({ user: user._id, token: refreshToken, expiresAt });
 
-  res.status(201).json({ success: true, data: { user: { id: user._id, phone: user.phone, name: user.name, surname: user.surname, role: user.role }, accessToken, refreshToken } });
+  res.status(201).json({ 
+    success: true, 
+    data: { 
+      user: { 
+        id: user._id, 
+        phone: user.phone, 
+        name: user.name,
+        surname: user.surname,
+        role: user.role,
+        city: user.city,
+        categories: user.categories
+      }, 
+      accessToken, 
+      refreshToken 
+    } 
+  });
 };
 
 exports.login = async (req, res) => {
   const { phone, password } = req.body;
   if (!phone || !password) return res.status(400).json({ success: false, message: 'Phone and password required' });
 
-  const user = await User.findOne({ phone });
+  const user = await User.findOne({ phone }).populate('city categories');
   if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
   const ok = await bcrypt.compare(password, user.passwordHash);
@@ -52,7 +75,22 @@ exports.login = async (req, res) => {
   const expiresAt = decoded && decoded.exp ? new Date(decoded.exp * 1000) : null;
   await RefreshToken.create({ user: user._id, token: refreshToken, expiresAt });
 
-  res.json({ success: true, data: { user: { id: user._id, phone: user.phone, name: user.name, role: user.role }, accessToken, refreshToken } });
+  res.json({ 
+    success: true, 
+    data: { 
+      user: { 
+        id: user._id, 
+        phone: user.phone, 
+        name: user.name,
+        surname: user.surname,
+        role: user.role,
+        city: user.city,
+        categories: user.categories
+      }, 
+      accessToken, 
+      refreshToken 
+    } 
+  });
 };
 
 exports.refreshToken = async (req, res) => {
@@ -82,4 +120,36 @@ exports.logout = async (req, res) => {
 
   await RefreshToken.deleteOne({ token: refreshToken });
   res.json({ success: true, message: 'Logged out' });
+};
+// Get user info by ID (for displaying user profile in chat, etc.)
+exports.getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId).select('-passwordHash').populate('city categories');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      data: { 
+        id: user._id,
+        phone: user.phone,
+        name: user.name,
+        surname: user.surname,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
+        city: user.city,
+        categories: user.categories,
+        lastSeen: user.lastSeen,
+        about: user.about,
+        verification: user.verification,
+        isAvailable: user.isAvailable,
+      } 
+    });
+  } catch (error) {
+    console.error('Error getting user:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 };

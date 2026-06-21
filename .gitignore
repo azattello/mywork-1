@@ -23,6 +23,8 @@ web-build/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+pnpm-debug.log*
+*.log
 
 # macOS
 .DS_Store
@@ -30,6 +32,24 @@ yarn-error.*
 
 # local env files
 .env*.local
+# env
+.env
+
+# editor / IDE
+.vscode/
+.idea/
+*.iml
+
+# caches / temp
+.cache/
+.expo-shared/
+*.tmp
+*.temp
+*.swp
+*.swo
+*.orig
+*.orig.*
+*.rej
 
 # typescript
 *.tsbuildinfo

@@ -10,7 +10,7 @@ import Auth from "./components/Auth";
 
 import Home from "./components/Home";
 import Catalog from "./components/CatalogScreen";
-import Add from "./components/AddScreen";
+import CreateApplicationScreen from "./components/CreateApplicationScreen";
 import Apps from "./components/AppsScreen";
 import Account from "./components/AccountScreen";
 
@@ -27,7 +27,8 @@ import PostOpen from "./pro/PostOpen";
 
 import HomePro from "./pro/HomePro";
 import CatalogScreenPro from "./pro/CatalogScreenPro";
-import AddScreenPro from "./pro/AddScreenPro";
+// unified create application screen used for both client and pro
+import CreateApplicationScreenPro from "./components/CreateApplicationScreen";
 import AppsPro from "./pro/AppsScreenPro";
 import AccountPro from "./pro/AccountScreenPro";
 
@@ -40,6 +41,10 @@ import rating from "./pro/rating";
 import ViewAccount from "./components/viewAccount";
 import ChatScreen from "./components/ChatScreen";
 import FilterScreenPro from "./pro/FilterScreenPro";
+import SpecialistsCatalogScreen from "./components/SpecialistsCatalogScreen";
+import SpecialistProfileView from "./components/SpecialistProfileView";
+import MyApplicationsScreen from "./components/MyApplicationsScreen";
+import IncomingApplicationsScreen from "./components/IncomingApplicationsScreen";
 
 const  Stack = createStackNavigator();
 
@@ -91,7 +96,7 @@ export default function Navigate() {
             />
             <Stack.Screen 
                 name="Add" 
-                component={Add} 
+                component={CreateApplicationScreen} 
                 options={{headerShown: false }}
             />
             <Stack.Screen 
@@ -116,7 +121,7 @@ export default function Navigate() {
             />
             <Stack.Screen 
                 name="AddScreenPro" 
-                component={AddScreenPro} 
+                component={CreateApplicationScreenPro} 
                 options={{headerShown: false }}
             />
             <Stack.Screen 
@@ -207,7 +212,26 @@ export default function Navigate() {
                 component={FilterScreenPro} 
                 options={{headerShown: false }}
             />
-
+            <Stack.Screen 
+                name="SpecialistsCatalogScreen" 
+                component={SpecialistsCatalogScreen} 
+                options={{headerShown: false }}
+            />
+            <Stack.Screen 
+                name="SpecialistProfileView" 
+                component={SpecialistProfileView} 
+                options={{headerShown: false }}
+            />
+            <Stack.Screen 
+                name="MyApplicationsScreen" 
+                component={MyApplicationsScreen} 
+                options={{headerShown: false }}
+            />
+            <Stack.Screen 
+                name="IncomingApplicationsScreen" 
+                component={IncomingApplicationsScreen} 
+                options={{headerShown: false }}
+            />
 
 
         </Stack.Navigator>

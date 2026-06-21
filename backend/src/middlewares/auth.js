@@ -10,6 +10,11 @@ module.exports = async (req, res, next) => {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(payload.id);
     if (!user) return res.status(401).json({ success: false, message: 'Invalid token' });
+    
+    // Update lastSeen to current time (track user's last activity)
+    user.lastSeen = new Date();
+    await user.save();
+    
     req.user = user;
     next();
   } catch (err) {

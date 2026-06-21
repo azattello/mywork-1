@@ -1,4 +1,6 @@
 import React from 'react';
+import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
@@ -6,17 +8,20 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 
 // Клиент
 import Home from './Home';
-import Catalog from './CatalogScreen';
-import Add from './AddScreen';
+import SpecialistsCatalogScreen from './SpecialistsCatalogScreen';
+import CreateApplicationScreen from './CreateApplicationScreen';
 import Apps from './AppsScreen';
 import Account from './AccountScreen';
+import MyApplicationsScreen from './MyApplicationsScreen';
+import NotificationsScreen from './NotificationsScreen';
 
 // Специалист
 import HomePro from '../pro/HomePro';
 import CatalogScreenPro from '../pro/CatalogScreenPro';
-import AddScreenPro from '../pro/AddScreenPro';
 import AppsPro from '../pro/AppsScreenPro';
-import AccountPro from '../pro/AccountScreenPro';
+import AccountPro from '../pro/AccountScreenProFixed';
+import SpecialistResponsesScreen from '../pro/SpecialistResponsesScreen';
+import IncomingApplicationsScreen from './IncomingApplicationsScreen';
 
 // Общие экраны
 import Support from './support';
@@ -31,6 +36,17 @@ import ViewAccount from './viewAccount';
 import ChatScreen from './ChatScreen';
 import FilterScreenPro from '../pro/FilterScreenPro';
 import PostOpen from '../pro/PostOpen';
+import ManageCategories from './ManageCategories';
+import EditProfileScreen from './EditProfileScreen';
+import SelectCityScreen from './SelectCityScreen';
+import VerificationScreen from './VerificationScreen';
+import ReviewsScreen from './ReviewsScreen';
+import OrdersHistoryScreen from './OrdersHistoryScreen';
+import ResponsesViewScreen from './ResponsesViewScreen';
+import SpecialistProfileView from './SpecialistProfileView';
+import AvailableApplicationsScreen from './AvailableApplicationsScreen';
+import ApplicationDetailScreen from './ApplicationDetailScreen';
+import ChatListScreen from './ChatListScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -50,11 +66,11 @@ function TabNav() {
             case 'Каталог':
               iconName = focused ? 'list' : 'list-outline';
               break;
-            case 'Создать':
+            case 'Создать заказ':
               iconName = focused ? 'add-circle' : 'add-circle-outline';
               break;
-            case 'Заявки':
-              iconName = focused ? 'layers' : 'layers-outline';
+            case 'Мои заявки':
+              iconName = focused ? 'document' : 'document-outline';
               break;
             case 'Аккаунт':
               iconName = focused ? 'person-circle' : 'person-circle-outline';
@@ -73,15 +89,15 @@ function TabNav() {
       })}
     >
       <Tab.Screen name="Главная" component={Home} />
-      <Tab.Screen name="Каталог" component={Catalog} />
-      <Tab.Screen name="Создать" component={Add} />
-      <Tab.Screen name="Заявки" component={Apps} />
+      <Tab.Screen name="Каталог" component={SpecialistsCatalogScreen} />
+      <Tab.Screen name="Создать заказ" component={CreateApplicationScreen} />
+      <Tab.Screen name="Мои заявки" component={MyApplicationsScreen} />
       <Tab.Screen name="Аккаунт" component={Account} />
     </Tab.Navigator>
   );
 }
 
-function TabPro() {
+function TabPro({ unreadChatsCount = 0 }) {
   return (
     <Tab.Navigator
       initialRouteName="Главная"
@@ -93,14 +109,17 @@ function TabPro() {
             case 'Главная':
               iconName = focused ? 'home' : 'home-outline';
               break;
-            case 'Каталог':
-              iconName = focused ? 'list' : 'list-outline';
+            case 'Входящие':
+              iconName = focused ? 'inbox' : 'inbox-outline';
+              break;
+            case 'Чаты':
+              iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+              break;
+            case 'Мои заявки':
+              iconName = focused ? 'document' : 'document-outline';
               break;
             case 'Лента':
               iconName = focused ? 'flash' : 'flash-outline';
-              break;
-            case 'Отклики':
-              iconName = focused ? 'layers' : 'layers-outline';
               break;
             case 'Аккаунт':
               iconName = focused ? 'person-circle' : 'person-circle-outline';
@@ -111,26 +130,75 @@ function TabPro() {
         },
         tabBarActiveTintColor: '#EC1B23',
         tabBarInactiveTintColor: '#CA989A',
-        tabBarLabelStyle: {
-          fontSize: 11,
-          marginBottom: 3,
-        },
+        tabBarLabel: route.name,
+        tabBarBadge: route.name === 'Чаты' && unreadChatsCount > 0 ? unreadChatsCount : null,
         headerShown: false,
       })}
     >
       <Tab.Screen name="Главная" component={HomePro} />
-      <Tab.Screen name="Каталог" component={CatalogScreenPro} />
-      <Tab.Screen name="Лента" component={AddScreenPro} />
-      <Tab.Screen name="Отклики" component={AppsPro} />
+      <Tab.Screen name="Входящие" component={IncomingApplicationsScreen} />
+      <Tab.Screen name="Чаты" component={ChatListScreen} />
+      <Tab.Screen name="Мои заявки" component={AppsPro} />
+      <Tab.Screen name="Лента" component={AvailableApplicationsScreen} />
       <Tab.Screen name="Аккаунт" component={AccountPro} />
     </Tab.Navigator>
   );
 }
 
 export default function Main({navigation}) {
+  const [role, setRole] = useState('user');
+  const [loading, setLoading] = useState(true);
+  const [unreadChatsCount, setUnreadChatsCount] = useState(0);
+
+  useEffect(() => {
+    const loadRole = async () => {
+      try {
+        // Сначала пробуем загрузить activeRole из сохраненного пользователя
+        const currentUserStr = await AsyncStorage.getItem('@currentUser');
+        if (currentUserStr) {
+          const currentUser = JSON.parse(currentUserStr);
+          const activeRole = currentUser.activeRole || currentUser.role || 'user';
+          setRole(activeRole === 'specialist' ? 'specialist' : 'user');
+        } else {
+          // Fallback на старый метод
+          const currentRole = await AsyncStorage.getItem('@currentRole');
+          // Обрабатываем все варианты: 'specialist', 'profi', 'user', 'client'
+          const normalizedRole = (currentRole === 'specialist' || currentRole === 'profi') ? 'specialist' : 'user';
+          setRole(normalizedRole);
+        }
+      } catch (err) {
+        console.error('Load role error', err);
+        setRole('user');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadRole();
+  }, []);
+
+  // Слушаем глобальное обновление unreadChatsCount
+  useEffect(() => {
+    if (global.setUnreadChatsCount) {
+      // Сохраняем оригинальную функцию если она была
+      const originalSetUnreadChatsCount = global.setUnreadChatsCount;
+      
+      // Переопределяем чтобы обновить локальное состояние
+      global.setUnreadChatsCount = (count) => {
+        setUnreadChatsCount(count);
+        if (originalSetUnreadChatsCount && typeof originalSetUnreadChatsCount === 'function') {
+          originalSetUnreadChatsCount(count);
+        }
+      };
+    }
+  }, []);
+
+  if (loading) {
+    return null; // или LoadingScreen
+  }
+
   return(
     <NavigationContainer independent={true} >
-      <Stack.Navigator initialRouteName="TabNav">
+      <Stack.Navigator initialRouteName={role === 'specialist' ? 'TabPro' : 'TabNav'}>
         <Stack.Screen 
           name="TabNav" 
           component={TabNav} 
@@ -138,9 +206,10 @@ export default function Main({navigation}) {
         />
         <Stack.Screen 
           name="TabPro" 
-          component={TabPro} 
           options={{headerShown: false }}
-        />
+        >
+          {() => <TabPro unreadChatsCount={unreadChatsCount} />}
+        </Stack.Screen>
         <Stack.Screen
           name={'Служба поддержки'}
           component={Support}
@@ -150,6 +219,66 @@ export default function Main({navigation}) {
           name={'Ваш город'}
           component={Cities}
           oprions={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'Управление категориями'}
+          component={ManageCategories}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'EditProfile'}
+          component={EditProfileScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'SelectCity'}
+          component={SelectCityScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'Verification'}
+          component={VerificationScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'Reviews'}
+          component={ReviewsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'OrdersHistory'}
+          component={OrdersHistoryScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'CreateApplication'}
+          component={CreateApplicationScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'ResponsesView'}
+          component={ResponsesViewScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'SpecialistProfileView'}
+          component={SpecialistProfileView}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'AvailableApplications'}
+          component={AvailableApplicationsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'SpecialistsCatalog'}
+          component={SpecialistsCatalogScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'ApplicationDetail'}
+          component={ApplicationDetailScreen}
+          options={{headerShown: false}}
         />
         <Stack.Screen
           name={'SplashScreen'}
@@ -187,13 +316,18 @@ export default function Main({navigation}) {
           oprions={{headerShown: false}}
         />
          <Stack.Screen
-          name={'Чат'}
+          name={'ChatScreen'}
           component={ChatScreen}
-          oprions={{headerShown: false}}
+          options={{headerShown: false}}
         />
         <Stack.Screen
           name={'Фильтр'}
           component={FilterScreenPro}
+          oprions={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'Уведомления'}
+          component={NotificationsScreen}
           oprions={{headerShown: false}}
         />
         

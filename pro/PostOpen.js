@@ -1,52 +1,271 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
-import {View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, FlatList} from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View, 
+  StyleSheet, 
+  Text, 
+  ScrollView, 
+  TextInput, 
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator
+} from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-// import AppsList from './appsList';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios/dist/axios.min.js';
+import { API_URL } from '../config';
 
+// Для удобства разработки: включите mockMode = true чтобы фронтенд работал
+// без реального бэкенда. Поменяйте на false когда сервер доступен.
+const mockMode = true;
 
+// Простой локальный эмулятор сокета (pub/sub внутри компонента)
+function createLocalSocket() {
+  const listeners = {};
+  return {
+    on: (event, cb) => {
+      listeners[event] = listeners[event] || [];
+      listeners[event].push(cb);
+    },
+    off: (event, cb) => {
+      if (!listeners[event]) return;
+      listeners[event] = listeners[event].filter(f => f !== cb);
+    },
+    emit: (event, data) => {
+      (listeners[event] || []).forEach(cb => cb(data));
+    }
+  };
+}
 
-export default function PostOpen({navigation}) {
+export default function PostOpen({ route, navigation }) {
+  const [application, setApplication] = useState(null);
+  const [responses, setResponses] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const socketRef = useRef(null);
+
+  // Инициализация mock-сокета и мок-данных
+  useEffect(() => {
+    if (mockMode) {
+      socketRef.current = createLocalSocket();
+      // Подписка на "newMessage" и "statusUpdate"
+      socketRef.current.on('newMessage', (m) => {
+        setMessages(prev => [...prev, m]);
+      });
+      socketRef.current.on('statusUpdate', (s) => {
+        setApplication(prev => ({ ...prev, status: s }));
+      });
+    }
+
+    loadAll();
+
+    return () => {
+      if (socketRef.current && socketRef.current.off) {
+        socketRef.current.off('newMessage');
+        socketRef.current.off('statusUpdate');
+      }
+    };
+  }, []);
+
+  // Загрузка всех данных (mock или реальный API)
+  async function loadAll() {
+    setLoading(true);
+    try {
+      if (mockMode) {
+        // Простые mock-данные
+        const mockApp = {
+          _id: 'app_1',
+          title: 'Инженер-программист Специалист',
+          price: '18 000 тнг',
+          description: 'Установка и настройка ПО, разработка с нуля, консультации.',
+          city: 'Алматы',
+          date: '5 июля',
+          orderNumber: '12345678',
+          createdAt: '2025-06-30T12:00:00Z',
+          user: { name: 'Алексей' },
+          status: 'open'
+        };
+
+        const mockResponses = [
+          { _id: 'r1', specialist: { name: 'Иван' }, message: 'Могу сделать за 15000', price: 15000, status: 'pending' },
+          { _id: 'r2', specialist: { name: 'Мария' }, message: 'Готова завтра', price: 18000, status: 'pending' }
+        ];
+
+        const mockMessages = [
+          { _id: 'm1', senderName: 'Иван', text: 'Здравствуйте, условия уточнить?', createdAt: new Date().toISOString() }
+        ];
+
+        // Имитация задержки
+        await new Promise(r => setTimeout(r, 300));
+        setApplication(mockApp);
+        setResponses(mockResponses);
+        setMessages(mockMessages);
+      } else {
+        // Реальный API (оставляем базовый каркас, если подключите later)
+        const { applicationId } = route.params || {};
+        const token = await AsyncStorage.getItem('token');
+        const appRes = await axios.get(`${API_URL}/applications/${applicationId}`, { headers: { Authorization: `Bearer ${token}` } });
+        const responsesRes = await axios.get(`${API_URL}/applications/${applicationId}/responses`, { headers: { Authorization: `Bearer ${token}` } });
+        const chatRes = await axios.get(`${API_URL}/applications/${applicationId}/chat`, { headers: { Authorization: `Bearer ${token}` } });
+        setApplication(appRes.data);
+        setResponses(responsesRes.data);
+        setMessages(chatRes.data.messages || chatRes.data);
+      }
+    } catch (error) {
+      console.error('Load error', error);
+      Alert.alert('Ошибка', 'Не удалось загрузить данные');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Мок: отправка сообщения
+  async function sendMessage() {
+    if (!newMessage.trim()) return;
+    const msg = { _id: `m_${Date.now()}`, senderName: 'Вы', text: newMessage.trim(), createdAt: new Date().toISOString() };
+    setMessages(prev => [...prev, msg]);
+    setNewMessage('');
+
+    // эмулируем ответ специалиста через 2 секунды
+    if (mockMode) {
+      setTimeout(() => {
+        const reply = { _id: `m_${Date.now()+1}`, senderName: 'Иван', text: 'Принял, отпишите детали', createdAt: new Date().toISOString() };
+        // отправляем через локальный сокет чтобы сработала подписка
+        socketRef.current && socketRef.current.emit('newMessage', reply);
+      }, 2000);
+    } else {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        await axios.post(`${API_URL}/applications/${application._id}/chat`, { text: msg.text }, { headers: { Authorization: `Bearer ${token}` } });
+      } catch (err) {
+        console.error('Send message error', err);
+      }
+    }
+  }
+
+  // Мок: изменить статус заявки
+  async function updateStatus(newStatus) {
+    if (mockMode) {
+      setApplication(prev => ({ ...prev, status: newStatus }));
+      // оповестим подписчиков
+      socketRef.current && socketRef.current.emit('statusUpdate', newStatus);
+      return;
+    }
+    try {
+      const token = await AsyncStorage.getItem('token');
+      await axios.put(`${API_URL}/applications/${application._id}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
+      setApplication(prev => ({ ...prev, status: newStatus }));
+    } catch (err) {
+      console.error('Status update error', err);
+      Alert.alert('Ошибка', 'Не удалось обновить статус');
+    }
+  }
+
+  // Мок: принять отклик
+  async function acceptResponse(responseId) {
+    if (mockMode) {
+      setResponses(prev => prev.map(r => r._id === responseId ? { ...r, status: 'accepted' } : r));
+      updateStatus('in_progress');
+      return;
+    }
+    try {
+      const token = await AsyncStorage.getItem('token');
+      await axios.post(`${API_URL}/applications/${application._id}/responses/${responseId}/accept`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      loadAll();
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Ошибка', 'Не удалось принять отклик');
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
   return (
-   
-  <ScrollView style={styles.container}>
-  
-  <View style={styles.detailsContainer}>
-        <Text style={styles.title}>Инженер-программист Специалист</Text>
-        <Text style={styles.price}>18 000 тнг Программисты</Text>
+    <ScrollView style={styles.container}>
+      <View style={styles.detailsContainer}>
+        <Text style={styles.title}>{application.title}</Text>
+        <Text style={styles.price}>{application.price} Программисты</Text>
         <Text style={styles.sectionTitle}>Описание</Text>
-        <Text style={styles.description}>
-          Установка и настройка программного обеспечения. Разработка с нуля. Консультации и обучение по программированию. Опыт работы более 10 лет. Подготовка специалистов в области технического обслуживания и ремонта оборудования.
-        </Text>
-        <Text style={styles.sectionTitle}>Дистанционно</Text>
-        <Text style={styles.sectionTitle}>Адрес</Text>
-        <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2906.528960108566!2d76.90324087508381!3d43.24033467903749!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3883693a65a69929%3A0x2e9b4e3bcced1a8f!2sGlobus!5e0!3m2!1sru!2skz!4v1723195644830!5m2!1sru!2skz" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
-        <Text style={styles.details}>Алматы (МСК+3)</Text>
+        <Text style={styles.description}>{application.description}</Text>
+        <Text style={styles.sectionTitle}>Город</Text>
+        <Text style={styles.details}>{(application.city && (application.city.name || application.city))}</Text>
         <Text style={styles.sectionTitle}>Когда</Text>
-        <Text style={styles.details}>начать: 5 июля (пт)</Text>
-        <Text style={styles.sectionTitle}>Заказ № 12345678</Text>
-        <Text style={styles.details}>Заказ оставлен 30 июн в 12:00</Text>
+        <Text style={styles.details}>{application.date}</Text>
+        <Text style={styles.sectionTitle}>Заказ № {application.orderNumber}</Text>
+        <Text style={styles.details}>Заказ оставлен {new Date(application.createdAt).toLocaleString()}</Text>
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>Алексей</Text>
-          <Text style={styles.userStatus}>В сети 30 июн в 14:00</Text>
+          <Text style={styles.userName}>{application.user.name}</Text>
+          <Text style={styles.userStatus}>статус: {application.status}</Text>
           <Ionicons name="thumbs-up" size={16} color="#000" />
         </View>
-        <Text style={styles.note}>В этом заказе ваш отклик будет 1-м по рейтингу.</Text>
       </View>
-      <TouchableOpacity style={styles.button} onPress={() => alert('Написать клиенту')}>
-        <Text style={styles.buttonText}>Написать клиенту</Text>
-      </TouchableOpacity>
-      <Text style={styles.similarOrdersTitle}>Похожие заказы</Text>
-      <View style={styles.similarOrder}>
-        <Text style={styles.similarOrderTitle}>Разработка на Python</Text>
-        <Text style={styles.similarOrderDetails}>Программирование веб-приложений. Фреймворк: Django...</Text>
-        <Text style={styles.similarOrderDetails}>Дистанционно. Алматы</Text>
-        <Text style={styles.similarOrderDetails}>10 июл. (Пн) 18:00</Text>
+
+      <View style={{ marginTop: 16 }}>
+        <Text style={styles.sectionTitle}>Отклики</Text>
+        {responses.map(r => (
+          <View key={r._id} style={[styles.detailsContainer, { marginTop: 8 }]}>
+            <Text style={{ fontWeight: 'bold' }}>{r.specialist.name}</Text>
+            <Text>{r.message}</Text>
+            <Text>Цена: {r.price}</Text>
+            <Text>Статус: {r.status}</Text>
+            {r.status !== 'accepted' && (
+              <TouchableOpacity style={[styles.button, { marginTop: 8 }]} onPress={() => acceptResponse(r._id)}>
+                <Text style={styles.buttonText}>Принять</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
       </View>
-    <View style={styles.area}></View>
-  </ScrollView>
-);
+
+      <View style={{ marginTop: 16 }}>
+        <Text style={styles.sectionTitle}>Чат</Text>
+        <View style={{ maxHeight: 300 }}>
+          {messages.map(m => (
+            <View key={m._id} style={[styles.messageBox, m.senderName === 'Вы' ? styles.myMessage : styles.otherMessage]}>
+              <Text style={styles.messageText}>{m.text}</Text>
+              <Text style={styles.messageTime}>{new Date(m.createdAt).toLocaleTimeString()}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            value={newMessage}
+            onChangeText={setNewMessage}
+            placeholder="Введите сообщение..."
+          />
+          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+            <Text style={styles.sendButtonText}>Отправить</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={{ marginTop: 16 }}>
+        <Text style={styles.sectionTitle}>Действия по заявке</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity style={[styles.button, { flex: 1 }]} onPress={() => updateStatus('in_progress')}>
+            <Text style={styles.buttonText}>Начать</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.button, { flex: 1, backgroundColor: '#4CAF50' }]} onPress={() => updateStatus('completed')}>
+            <Text style={styles.buttonText}>Завершить</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.button, { flex: 1, backgroundColor: '#888' }]} onPress={() => updateStatus('cancelled')}>
+            <Text style={styles.buttonText}>Отменить</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.area}></View>
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({

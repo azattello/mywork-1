@@ -11,21 +11,15 @@ const routes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
 const socketHandler = require('./socket');
 
-const app = express();
+const app = require('./app');
 const PORT = process.env.PORT || 4000;
-
-app.use(morgan('dev'));
-app.use(cors());
-app.use(express.json());
-
-app.use('/api', routes);
-
-app.use(errorHandler);
 
 const start = async () => {
   await connectDB();
   const server = http.createServer(app);
   const io = new Server(server, { cors: { origin: '*' } });
+  // Make io available via app and initialize socket handlers
+  app.set('io', io);
   socketHandler(io);
 
   server.listen(PORT, () => {
@@ -33,4 +27,8 @@ const start = async () => {
   });
 };
 
-start();
+if (require.main === module) {
+  start();
+}
+
+module.exports = { start, app };

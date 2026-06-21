@@ -3,7 +3,7 @@ import { AppRegistry, TextInput, SafeAreaView, StyleSheet, Text, View, ScrollVie
 
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import axios from 'axios/dist/axios.min.js';
 import { API_URL } from '../config';
 
 export default function AppsList() {

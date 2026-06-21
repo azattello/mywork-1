@@ -1,16 +1,21 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import {View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import {View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, FlatList } from 'react-native';
+import { KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import apiClient from '../utils/apiClient';
+import { Toast } from '../utils/ToastManager';
 import Mode from './mode';
 import CommMode from './CommunicationMode';
 import { sendData } from './sendData';
 
 
 export default function Add({navigation}) {
-  const [selectedCity, setSelectedCity] = useState('Выберите город');
+  const [selectedCity, setSelectedCity] = useState(null);
+  const [cities, setCities] = useState([]);
+  const [showCityPicker, setShowCityPicker] = useState(false);
   const [mode, setMod] = useState('');
   const [comm, setComm] = useState('');
 
@@ -21,16 +26,28 @@ export default function Add({navigation}) {
   const [info, setInfo] = useState('');
 
   useEffect(() => {
-
     loadCityFromStorage();
+    loadCities();
     loadItems();
-  }, []); // Зависимость пуста, чтобы useEffect выполнялся только при монтировании компонента
+  }, []);
 
   useFocusEffect(() => {
     loadCityFromStorage();
+    loadCities();
     loadItems();
-    // Добавьте здесь код, который нужно выполнить при каждом фокусе
   });
+
+  // Загрузить города из API
+  const loadCities = async () => {
+    try {
+      const res = await apiClient.request('get', '/api/cities');
+      if (res.data && res.data.data) {
+        setCities(res.data.data);
+      }
+    } catch (err) {
+      console.log('Error loading cities:', err.message);
+    }
+  };
 
   const loadItems = async () => {
     try {
@@ -62,11 +79,19 @@ export default function Add({navigation}) {
   const handleSendData = () => {
     // Валидация
     if (!userID) {
-      alert('Пользователь не найден. Пожалуйста, войдите в систему.');
+      Toast.error('Пользователь не найден. Пожалуйста, войдите в систему.');
       return;
     }
     if (!title || title.trim().length < 3) {
-      alert('Введите корректный заголовок (минимум 3 символа)');
+      Toast.error('Введите корректный заголовок (минимум 3 символа)');
+      return;
+    }
+    if (!info || info.trim().length < 10) {
+      Toast.error('Опишите задачу подробнее (минимум 10 символов)');
+      return;
+    }
+    if (!selectedCity) {
+      Toast.error('Выберите город');
       return;
     }
 
@@ -111,20 +136,20 @@ export default function Add({navigation}) {
 
   return (
     <SafeAreaView style={styles.wrapper}>
-    <StatusBar
-      backgroundColor="#fff"
-      name={'safd'}
-    />
-    
-    <View style={styles.header}>
-     
-    </View>
-
-    <ScrollView>
-              
-
+      <StatusBar
+        backgroundColor="#fff"
+        name={'safd'}
+      />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={{ flex: 1 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 140 }}>
               <View style={styles.gidContainer}>
-              <TouchableOpacity style={styles.geoContainer} onPress={cityChois}>
+                <TouchableOpacity style={styles.geoContainer} onPress={cityChois}>
                   <Ionicons size={30} color={'#999696'} name="location-outline"></Ionicons>
                   <Text style={styles.titleGeo}>{selectedCity}</Text>
                   <Ionicons size={30} color={'#999696'} name="chevron-forward-outline"></Ionicons>
@@ -151,7 +176,7 @@ export default function Add({navigation}) {
                   onChangeText={(text) => setTitle(text)}
                 />
 
-              <Text style={styles.titleH1}>Сколько вы готовы заплатить?</Text>
+                <Text style={styles.titleH1}>Сколько вы готовы заплатить?</Text>
                 <View style={styles.SummContainer}>
                   <TextInput
                     editable
@@ -175,34 +200,26 @@ export default function Add({navigation}) {
                   style={styles.textArea}
                   onChangeText={(text) => setInfo(text)}
                 />
-                  <View style={styles.h2Container}>
-                    <Text style={styles.collapsH2}>
-                        Максимум 1000 символов
-                    </Text>
-                  </View>
-
-                
-                
-              
-               
-
-
+                <View style={styles.h2Container}>
+                  <Text style={styles.collapsH2}>
+                    Максимум 1000 символов
+                  </Text>
+                </View>
               </View>
-             
-              {/* <View style={styles.area}></View> */}
-              
-          
-          
-    </ScrollView>
-    <View style={styles.footer}> 
-      <TouchableOpacity style={styles.supportContainer} onPress={handleSendData}>
-          <Text style={styles.supportH2}>
-            Опубликовать заявку
-          </Text>
-      </TouchableOpacity>
-    </View>
-  </SafeAreaView>
-);
+            </ScrollView>
+
+            <View style={styles.footer}> 
+              <TouchableOpacity style={styles.supportContainer} onPress={handleSendData}>
+                <Text style={styles.supportH2}>
+                  Опубликовать заявку
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
 };
 
 const styles = StyleSheet.create({

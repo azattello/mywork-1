@@ -4,7 +4,7 @@ import {View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, Touc
 import Ionicons from 'react-native-vector-icons/Ionicons';
 // import AppsList from './appsList';
 
-import axios from 'axios';
+import axios from 'axios/dist/axios.min.js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config';
 

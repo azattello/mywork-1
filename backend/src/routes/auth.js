@@ -11,5 +11,5 @@ router.post('/register', validate(registerSchema), authController.register);
 router.post('/login', loginLimiter, validate(loginSchema), authController.login);
 router.post('/refresh', validate(refreshSchema), authController.refreshToken);
 router.post('/logout', authController.logout);
-
+router.get('/user/:userId', authController.getUserById); // Get user info by ID (for chat, profiles, etc.)
 module.exports = router;

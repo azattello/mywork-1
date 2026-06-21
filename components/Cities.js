@@ -1,136 +1,92 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, FlatList} from 'react-native';
+import { View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const data = [
-  { id: 1, name: 'Алматы' },
-  { id: 2, name: 'Нур-Султан' },
-  { id: 3, name: 'Шымкент' },
-  { id: 4, name: 'Актобе' },
-  { id: 5, name: 'Талдыкорган' },
-  { id: 6, name: 'Атырау' },
-  { id: 7, name: 'Усть-Каменогорск' },
-  { id: 8, name: 'Семей' },
-  { id: 9, name: 'Тараз' },
-  { id: 10, name: 'Караганда' },
-  { id: 11, name: 'Костанай' },
-  { id: 12, name: 'Байконур' },
-  { id: 13, name: 'Актау' },
-  { id: 14, name: 'Павлодар' },
-  { id: 15, name: 'Петропавловск' },
-  { id: 16, name: 'Туркестан' },
-
-  // Добавьте вашу реальную данные здесь
-];
+import apiClient from '../utils/apiClient';
 
 export default function Cities({navigation}) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredData, setFilteredData] = useState(data);
-  
+  const [cities, setCities] = useState([]);
+  const [filteredData, setFilteredData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadCities();
+  }, []);
+
+  const loadCities = async () => {
+    try {
+      setLoading(true);
+      const res = await apiClient.request('get', '/api/cities');
+      if (res.data && res.data.success) {
+        setCities(res.data.data || []);
+        setFilteredData(res.data.data || []);
+      }
+    } catch (err) {
+      console.error('Error loading cities:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSearch = (query) => {
-    const filtered = data.filter((item) =>
+    const filtered = cities.filter((item) =>
       item.name.toLowerCase().includes(query.toLowerCase())
     );
     setFilteredData(filtered);
     setSearchQuery(query);
   };
 
-    const handleCityPress = async (text) => {
-        try {
-          await AsyncStorage.setItem('@city', text);
-          console.log('Текст сохранен в AsyncStorage:', text);
-        } catch (error) {
-          console.error('Ошибка при сохранении текста:', error);
-        }
-        // navigation.navigate('TabNav', { screen: 'Создать' });
-        navigation.goBack();
-      };
+  const handleCityPress = async (cityId, cityName) => {
+    try {
+      // Save both the ID and name for reference
+      await AsyncStorage.setItem('@city', cityId);
+      await AsyncStorage.setItem('@cityName', cityName);
+      console.log('City saved:', cityId, cityName);
+    } catch (error) {
+      console.error('Error saving city:', error);
+    }
+    navigation.goBack();
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.wrapper}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#EC1B23" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.wrapper}>
-    <StatusBar
-      backgroundColor="#fff"
-    />
+    <StatusBar backgroundColor="#fff" />
    
-   <View style={styles.header}>
+    <View style={styles.header}>
       <View style={styles.inputContainer}>
-      <Ionicons size={25} color={'#ABABAB'} name="search-outline"></Ionicons>
+        <Ionicons size={25} color={'#ABABAB'} name="search-outline"></Ionicons>
         <TextInput
-        style={styles.input}
-        placeholder="Поиск городов"
-        keyboardType="default"
-        autoCapitalize="none"
-        value={searchQuery}
-        onChangeText={handleSearch}
+          style={styles.input}
+          placeholder="Поиск городов"
+          keyboardType="default"
+          autoCapitalize="none"
+          value={searchQuery}
+          onChangeText={handleSearch}
         />
       </View>
     </View>
               
     <FlatList
-        data={filteredData}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.choiceCityEl} onPress={() => handleCityPress(item.name)} >
-            <Text style={styles.choiceCityElText}>{item.name}</Text>
-          </TouchableOpacity>
-        )}
-      />
-{/*       
-        <TouchableOpacity style={styles.choiceCityEl} onPress={() => handleCityPress('Алматы')} >
-            <Text style={styles.choiceCityElText}>Алматы</Text>
+      data={filteredData}
+      keyExtractor={(item) => item._id}
+      renderItem={({ item }) => (
+        <TouchableOpacity style={styles.choiceCityEl} onPress={() => handleCityPress(item._id, item.name)} >
+          <Text style={styles.choiceCityElText}>{item.name}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Нур-Султан')} >
-            <Text style={styles.choiceCityElText}>Нур-Султан</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Шымкент')} >
-            <Text style={styles.choiceCityElText}>Шымкент</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Актобе')} >
-            <Text style={styles.choiceCityElText}>Актобе</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Талдыкорган')} >
-            <Text style={styles.choiceCityElText}>Талдыкорган</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Атырау')} >
-            <Text style={styles.choiceCityElText}>Атырау</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Усть-Каменогорск')} >
-            <Text style={styles.choiceCityElText}>Усть-Каменогорск</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Семей')} >
-            <Text style={styles.choiceCityElText}>Семей</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Тараз')} >
-            <Text style={styles.choiceCityElText}>Тараз</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Караганда')} >
-            <Text style={styles.choiceCityElText}>Караганда</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Костанай')} >
-            <Text style={styles.choiceCityElText}>Костанай</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Байконур')} >
-            <Text style={styles.choiceCityElText}>Байконур</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Актау')} >
-            <Text style={styles.choiceCityElText}>Актау</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Павлодар')} >
-            <Text style={styles.choiceCityElText}>Павлодар</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Петропавловск')} >
-            <Text style={styles.choiceCityElText}>Петропавловск</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.choiceCityEl2} onPress={() => handleCityPress('Туркестан')} >
-            <Text style={styles.choiceCityElText}>Туркестан</Text>
-        </TouchableOpacity> */}
-        
-        
-
-
+      )}
+    />
   </SafeAreaView>
 );
 };

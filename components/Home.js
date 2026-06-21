@@ -13,16 +13,47 @@ export default function Home({navigation}) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const retrievedData = await AsyncStorage.getItem('@currentRole');
-        setStoredRole(retrievedData || 'Нет данных в хранилище');
-
-        if (retrievedData === 'profi') {
-          navigation.navigate('TabPro');
-        } else if (retrievedData === 'client') {
-          navigation.navigate('TabNav');
+        // Сначала пробуем загрузить activeRole из сохраненного пользователя
+        const currentUserStr = await AsyncStorage.getItem('@currentUser');
+        if (currentUserStr) {
+          try {
+            const currentUser = JSON.parse(currentUserStr);
+            const activeRole = currentUser.activeRole || currentUser.role || 'user';
+            setStoredRole(activeRole);
+            
+            if (activeRole === 'specialist') {
+              navigation.navigate('TabPro');
+            } else {
+              navigation.navigate('TabNav');
+            }
+          } catch (parseErr) {
+            console.error('Parse error:', parseErr);
+            // Fallback на @currentRole
+            const retrievedData = await AsyncStorage.getItem('@currentRole');
+            setStoredRole(retrievedData || 'user');
+            
+            // Обрабатываем все варианты: 'specialist', 'profi', 'user', 'client'
+            if (retrievedData === 'profi' || retrievedData === 'specialist') {
+              navigation.navigate('TabPro');
+            } else {
+              navigation.navigate('TabNav');
+            }
+          }
+        } else {
+          // Fallback на @currentRole если нет сохраненного пользователя
+          const retrievedData = await AsyncStorage.getItem('@currentRole');
+          setStoredRole(retrievedData || 'user');
+          
+          // Обрабатываем все варианты: 'specialist', 'profi', 'user', 'client'
+          if (retrievedData === 'profi' || retrievedData === 'specialist') {
+            navigation.navigate('TabPro');
+          } else {
+            navigation.navigate('TabNav');
+          }
         }
       } catch (error) {
         console.error('Ошибка загрузки данных:', error);
+        navigation.navigate('TabNav');
       }
     };
 
@@ -30,9 +61,7 @@ export default function Home({navigation}) {
   }, []);
 
   const AddRef = ()=>{
-    // navigation.navigate('Add');
-    navigation.navigate('TabNav', { screen: 'Создать' });
-    
+    navigation.navigate('CreateApplication');
   }
 
   const supportRef = ()=>{
@@ -73,6 +102,7 @@ export default function Home({navigation}) {
                     <Ionicons size={30} color={'#fff'} name="add-outline"></Ionicons>
                     <Text style={styles.buttonText}>Создать заявку</Text>
                   </TouchableOpacity>
+
                 </View>
 
                 <View style={styles.line}>

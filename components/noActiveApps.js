@@ -1,218 +1,345 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import {View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity, FlatList} from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, FlatList, RefreshControl, ActivityIndicator, Alert } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-// import AppsList from './appsList';
-
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '../config';
+import apiClient from '../utils/apiClient';
+import { useNavigation } from '@react-navigation/native';
 
-
-export default function NoActiveApps({navigation}) {
-
+export default function NoActiveApps({ navigation }) {
+  const nav = navigation || useNavigation();
   const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const currentUserRaw = await AsyncStorage.getItem('@currentUser');
-        if (!currentUserRaw) return setData([]);
-        let userId = null;
-        try { const parsed = JSON.parse(currentUserRaw); userId = parsed?.id || parsed?._id || parsed?.userId || parsed?.uid || null; } catch (e) { userId = currentUserRaw; }
-        if (!userId) return setData([]);
-        const res = await axios.get(`${API_URL}/api/applications/user/${userId}`);
-        if (res.data && res.data.success) setData(res.data.data || []);
-        else setData([]);
-      } catch (err) {
-        console.error('Error fetching applications:', err);
-        setData([]);
-      }
-    };
-
-    fetchData();
+    loadApplications();
   }, []);
 
+  const loadApplications = async () => {
+    try {
+      setLoading(true);
+      const currentUserStr = await AsyncStorage.getItem('@currentUser');
+      if (!currentUserStr) {
+        setData([]);
+        return;
+      }
+
+      const currentUser = JSON.parse(currentUserStr);
+      const userId = currentUser?._id || currentUser?.id;
+
+      if (!userId) {
+        setData([]);
+        return;
+      }
+
+      const res = await apiClient.get(`/api/applications/user/${userId}`);
+
+      if (res.data && res.data.success && res.data.data) {
+        // Фильтруем завершенные заказы (status = 'completed' или 'cancelled')
+        const completedApps = res.data.data.filter(
+          app => app && (app.status === 'completed' || app.status === 'cancelled')
+        );
+        setData(completedApps);
+      } else {
+        setData([]);
+      }
+    } catch (err) {
+      console.error('Error loading applications:', err);
+      Alert.alert('Ошибка', 'Не удалось загрузить заказы');
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadApplications();
+    setRefreshing(false);
+  };
+
+  const handleOpenDetail = (item) => {
+    const id = item?._id || item?.id;
+    nav.navigate('ApplicationDetail', { applicationId: id });
+  };
+
+  const handleViewResponses = (item) => {
+    const id = item?._id || item?.id;
+    nav.navigate('ResponsesView', { applicationId: id, applicationTitle: item?.title });
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return '#4CAF50';
+      case 'cancelled':
+        return '#F44336';
+      default:
+        return '#999';
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'Завершено';
+      case 'cancelled':
+        return 'Отменено';
+      default:
+        return status;
+    }
+  };
+
   const renderItem = ({ item }) => (
-    
-    <TouchableOpacity style={item.active === false ?  styles.cardApp : styles.cardAppOff }>
-      <View style={styles.titleContainer}>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.summ}>{item.summ} ₸</Text>
-      </View>
-      <Text style={styles.catalogName}>
-      {item.info}
-      </Text>
-      <View style={styles.info}>
-        <Text >8 откликов</Text>
-        <View style={styles.eyeInfo}>
-          <Ionicons size={15} name="eye-outline"></Ionicons>
-          <Text style={styles.infoText}>75</Text>
+    <TouchableOpacity 
+      style={styles.card}
+      activeOpacity={0.7}
+      onPress={() => handleOpenDetail(item)}
+    >
+      <View style={styles.header}>
+        <View style={styles.titleSection}>
+          <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+          </View>
         </View>
+        <Text style={styles.price}>{item.summ} ₸</Text>
       </View>
-      </TouchableOpacity>
+
+      <Text style={styles.description} numberOfLines={2}>
+        {item.info || 'Нет описания'}
+      </Text>
+
+      {item.city && (
+        <View style={styles.infoRow}>
+          <Ionicons name="location-outline" size={14} color="#666" />
+          <Text style={styles.infoText}>{(item.city && (item.city.name || item.city))}</Text>
+        </View>
+      )}
+
+      {item.currentSpecialist && (
+        <View style={styles.specialistSection}>
+          <Ionicons name="person-circle" size={24} color="#EC1B23" />
+          <View style={{ marginLeft: 10, flex: 1 }}>
+            <Text style={styles.specialistName} numberOfLines={1}>
+              {item.currentSpecialist.surname} {item.currentSpecialist.name}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {item.review && item.status === 'completed' && (
+        <View style={styles.reviewBox}>
+          <View style={styles.ratingStars}>
+            {[...Array(5)].map((_, i) => (
+              <Ionicons
+                key={i}
+                name={i < item.review.rating ? 'star' : 'star-outline'}
+                size={14}
+                color="#FFC107"
+              />
+            ))}
+          </View>
+          <Text style={styles.reviewText} numberOfLines={2}>{item.review.text}</Text>
+        </View>
+      )}
+
+      <View style={styles.footer}>
+        <View style={styles.dateContainer}>
+          <Ionicons name="calendar-outline" size={14} color="#666" />
+          <Text style={styles.dateText}>
+            {new Date(item.createdAt).toLocaleDateString('ru-RU')}
+          </Text>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.responseButton}
+          onPress={() => handleViewResponses(item)}
+        >
+          <Ionicons name="eye-outline" size={14} color="#EC1B23" />
+          <Text style={styles.responseButtonText}>Отклики</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
   );
 
-  
-
-  return (
-    
-
-        <View style={styles.main}>
-          <FlatList
-            data={data}
-            renderItem={renderItem}
-            keyExtractor={(item) => item.id}
-            style={styles.area}
-            showsVerticalScrollIndicator={false}
-          />
-
-
-        </View> 
-
-);
-};
-
-const styles = StyleSheet.create({
-wrapper:{
-  display: 'flex',
-  width: '100%',
-  flex: 1,
-  flexDirection: 'column',
-  backgroundColor: '#F2F2F2'
-
-},
-header: {
-  backgroundColor: '#fff',
-},
-
-
-container: {
-  display: 'flex',
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  backgroundColor: '#fff',
-  width: '100%',
-  paddingHorizontal: 40,
-  paddingVertical: 20,
-
-  borderBottomWidth: 0.2,
-  borderColor: '#A7A7A7'
-},
-choice1:{
-  height: 50,
-  width: '45%',
-  marginLeft: 5,
-  backgroundColor: '#fff',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 10,
-
-  shadowColor: "#999696",
-  shadowOffset: {
-    width: 0,
-    height: 2,
-  },
-  shadowOpacity: 0.05,
-  shadowRadius: 1,
-  elevation: 10,
-},
-choiceText:{
-  color: '#fff',
-},
-choice2:{
-  height: 50,
-  width: '45%',
-  marginRight: 5,
-  backgroundColor: '#B23439',
-  alignItems: 'center',
-  justifyContent: 'center',
-  borderRadius: 10,
-
-
-  shadowColor: "#999696",
-  shadowOffset: {
-    width: 0,
-    height: 2,
-  },
-  shadowOpacity: 0.05,
-  shadowRadius: 1,
-  elevation: 10,
-  },
-
-
-  main:{
-    flex: 1,
-    flexDirection: 'column',
-    width: '100%',
-    paddingHorizontal: 20,
-
-  },
-
-  cardApp:{
-    marginTop: 20,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    
-    shadowColor: "#888",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 10,
-
-    flexDirection: 'column',
-    // alignItems: 'center',
-    // justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  cardAppOff:{
-    display: 'none',
-  },
-  titleContainer:{
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 0.4,
-    borderBottomColor: '#DA7D81',
-    paddingBottom: 10,
-
-  },
-  title:{
-    fontSize: 18,
-    textAlign: 'left',
-    fontWeight: '500',
-  },
-  summ:{
-    fontWeight: '500',
-    fontSize: 16,
-
-  },
-  catalogName:{
-    paddingVertical: 15,
-    fontSize: 16,
-  },
-  info:{
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-
-  },
-  eyeInfo:{
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  infoText:{
-    marginLeft: 10,
-  },
-  area: {
-    marginBottom: 10,
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#EC1B23" />
+      </View>
+    );
   }
 
+  if (data.length === 0) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Ionicons name="checkmark-done-outline" size={48} color="#ccc" />
+        <Text style={styles.emptyText}>Нет завершенных заказов</Text>
+        <Text style={styles.emptySubtext}>Ваши завершенные заказы появятся здесь</Text>
+      </View>
+    );
+  }
 
+  return (
+    <FlatList
+      data={data}
+      keyExtractor={(item) => String(item._id || item.id || item.title)}
+      renderItem={renderItem}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#EC1B23" />
+      }
+      contentContainerStyle={styles.listContent}
+      scrollEnabled={true}
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 8,
+  },
+  listContent: {
+    padding: 12,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  titleSection: {
+    flex: 1,
+    marginRight: 10,
+  },
+  title: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000',
+    lineHeight: 20,
+  },
+  statusBadge: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  price: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#EC1B23',
+  },
+  description: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  infoText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 6,
+  },
+  specialistSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    marginBottom: 8,
+  },
+  specialistName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  reviewBox: {
+    backgroundColor: '#FFF9C4',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  ratingStars: {
+    flexDirection: 'row',
+    gap: 2,
+    marginBottom: 6,
+  },
+  reviewText: {
+    fontSize: 12,
+    color: '#333',
+    lineHeight: 16,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    paddingTop: 10,
+  },
+  dateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  dateText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  responseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  responseButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#EC1B23',
+  },
 });

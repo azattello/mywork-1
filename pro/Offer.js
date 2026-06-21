@@ -17,7 +17,10 @@ const Offer = () => {
       <Text style={styles.label}>Предложение или вопрос клиенту</Text>
       <TextInput style={styles.textArea} placeholder="Расскажите о своём опыте..." multiline />
 
-      <TouchableOpacity style={styles.button} onPress={() => alert('Откликнуться')}>
+      <TouchableOpacity style={styles.button} onPress={() => {
+        const showToast = require('../utils/toast').default;
+        showToast('Отклик отправлен');
+      }}>
         <Text style={styles.buttonText}>Откликнуться</Text>
       </TouchableOpacity>
     </View>
@@ -86,9 +89,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
-
-    position: 'fixed',
-    top: 200,
   },
   buttonText: {
     color: '#fff',

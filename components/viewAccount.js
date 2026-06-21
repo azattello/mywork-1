@@ -6,20 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 
 
-import { getDatabase, ref, set, onValue, get, } from "firebase/database";
-import firebase from 'firebase/compat/app';
 
-const firebaseConfig = {
-	apiKey: "AIzaSyBCWFIu7g5tjQ7v6k24lh5Y4fY4Ue5miBM",
-	authDomain: "yoyo-23ae8.firebaseapp.com",
-	projectId: "yoyo-23ae8",
-	storageBucket: "yoyo-23ae8.appspot.com",
-	messagingSenderId: "870898352397",
-	appId: "1:870898352397:web:80a12cd1e8eb6ff617b044"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = getDatabase();
 
 
 const reviews = [
@@ -139,21 +126,42 @@ export default function ViewAccount({navigation}) {
 
 
   const loadData = async () => {
-	  try {
-      const userID = await AsyncStorage.getItem('@currentUser');
-      setStoredID(userID || 'Нет данных в хранилище');
+    try {
+      const current = await AsyncStorage.getItem('@currentUser');
+      if (current) {
+        try {
+          const parsed = JSON.parse(current);
+          setStoredID(parsed._id || parsed.id || 'Нет данных в хранилище');
+          setName(parsed.name || '');
+          setSurname(parsed.surname || '');
+          return;
+        } catch (e) { /* continue */ }
+      }
 
-      const snapshot = await get(ref(db, `users/${userID}` ));
-      console.log(snapshot);
-      setName(snapshot.val().name)
-      setSurname(snapshot.val().surname)
-
+      // Fallback: try API if token exists
+      const token = await AsyncStorage.getItem('@accessToken');
+      if (token) {
+        try {
+          const apiClient = require('../utils/apiClient').default;
+          const res = await apiClient.request('get', '/api/users/me');
+          if (res.data && res.data.success) {
+            const user = res.data.data;
+            setName(user.name || '');
+            setSurname(user.surname || '');
+            setStoredID(user._id || user.id || '');
+            await AsyncStorage.setItem('@currentUser', JSON.stringify(user));
+            return;
+          }
+        } catch (err) {
+          console.warn('API profile load failed:', err.message);
+        }
+      }
 
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
-	  }
+    }
 
-	};
+  };
   console.log(storedID);
   
   const ProfRef = ()=>{

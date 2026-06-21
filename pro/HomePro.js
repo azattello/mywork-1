@@ -49,6 +49,9 @@ export default function HomePro({navigation}) {
   const filterRef = ()=>{
     navigation.navigate('Фильтр');
   }
+  const AvailableApps = ()=>{
+    navigation.navigate('AvailableApplications');
+  }
   return (
     <SafeAreaView style={styles.wrapper}>
       <StatusBar
@@ -80,6 +83,11 @@ export default function HomePro({navigation}) {
                   <TouchableOpacity style={styles.touchButton} onPress={AddRef}>
                     <Ionicons size={30} color={'#fff'} name="flash-outline"></Ionicons>
                     <Text style={styles.buttonText}>Лента заявок</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.touchButton} onPress={AvailableApps}>
+                    <Ionicons size={30} color={'#fff'} name="layers-outline"></Ionicons>
+                    <Text style={styles.buttonText}>Доступные заказы</Text>
                   </TouchableOpacity>
                 </View>
 
