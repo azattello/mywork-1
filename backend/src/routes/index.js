@@ -9,6 +9,8 @@ const usersRoutes = require('./users');
 const citiesRoutes = require('./cities');
 const categoriesRoutes = require('./categories');
 const notificationRoutes = require('./notifications');
+const favoritesRoutes = require('./favorites');
+const complaintsRoutes = require('./complaints');
 
 router.use('/auth', authRoutes);
 router.use('/conversations', convRoutes);
@@ -18,4 +20,6 @@ router.use('/users', usersRoutes);
 router.use('/cities', citiesRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/favorites', favoritesRoutes);
+router.use('/complaints', complaintsRoutes);
 module.exports = router;

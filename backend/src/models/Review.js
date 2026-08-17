@@ -25,14 +25,24 @@ const reviewSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User'
   },
+  
+  // Основная оценка 1-5
   rating: { 
     type: Number, 
     required: true,
     min: 1,
     max: 5
   },
-  text: { type: String },
+  
+  // Отдельные критерии оценки 1-5
+  qualityRating: { type: Number, min: 1, max: 5 }, // Качество работы
+  timingRating: { type: Number, min: 1, max: 5 }, // Соблюдение сроков
+  communicationRating: { type: Number, min: 1, max: 5 }, // Коммуникация
+  
+  // Текстовый отзыв и фото
+  text: { type: String, maxlength: 500 },
   image: { type: String },
+  
   // Тип отзыва (от заказчика или от исполнителя)
   type: {
     type: String,
@@ -44,7 +54,9 @@ const reviewSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Один отзыв на заявку от одного пользователя
-reviewSchema.index({ application: 1, author: 1 }, { unique: true });
+// Индексы
+reviewSchema.index({ application: 1, author: 1 }, { unique: true }); // Один отзыв на заявку от одного пользователя
+reviewSchema.index({ toUser: 1 }); // Поиск всех отзывов для пользователя
+reviewSchema.index({ createdAt: -1 }); // Сортировка по дате
 
 module.exports = mongoose.model('Review', reviewSchema);

@@ -16,7 +16,14 @@ const updateSchema = Joi.object({
   about: Joi.string().max(1000).optional(),
   portfolio: Joi.array().items(Joi.string().uri()).optional(),
   isAvailable: Joi.boolean().optional(),
-  avatarUrl: Joi.string().uri().optional()
+  avatarUrl: Joi.string().uri().optional(),
+  minPrice: Joi.number().min(0).optional(),
+  maxPrice: Joi.number().min(0).optional(),
+  yearsOfExperience: Joi.number().min(0).optional(),
+  workMode: Joi.string().valid('online', 'offline', 'both').optional(),
+  latitude: Joi.number().optional(),
+  longitude: Joi.number().optional(),
+  serviceRadius: Joi.number().min(0).optional()
 });
 
 module.exports = {

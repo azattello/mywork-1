@@ -13,28 +13,43 @@ exports.getApplicationChat = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Заявка не найдена' });
     }
 
-    // Проверяем права доступа (только заказчик и выбранный специалист)
-    const isParticipant = 
-      application.user.toString() === userId.toString() ||
-      (application.currentSpecialist && 
-       application.currentSpecialist.toString() === userId.toString());
-
-    if (!isParticipant) {
-      return res.status(403).json({ success: false, message: 'Доступ запрещен' });
-    }
-
-    // Находим или создаем чат для заявки
-    let conversation = await Conversation.findOne({
+    // Новый сценарий: специалист не пишет до первого сообщения заказчика.
+    // После первого сообщения клиента он получает доступ в диалог, даже если ещё не был выбран.
+    const isOwner = application.user.toString() === userId.toString();
+    const isSelectedSpecialist =
+      (application.currentSpecialist && application.currentSpecialist.toString() === userId.toString()) ||
+      (application.proposedSpecialist && application.proposedSpecialist.toString() === userId.toString());
+    const existingConversation = await Conversation.findOne({
       application: applicationId,
-      participants: { 
-        $all: [application.user, application.currentSpecialist].filter(Boolean)
-      }
+      participants: userId
     });
 
-    if (!conversation && application.currentSpecialist) {
+    const isParticipant = isOwner || isSelectedSpecialist || !!existingConversation;
+
+    if (!isOwner && req.user.role === 'specialist' && !isSelectedSpecialist && (!existingConversation || !existingConversation.specialistUnlocked)) {
+      return res.status(403).json({ success: false, message: 'Доступ к переписке еще не открыт. Ждите первого сообщения от клиента.' });
+    }
+
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Доступ запрещен: этот чат закреплен за другим специалистом' });
+    }
+
+    // Находим или создаем чат для заявки.
+    // Важный сценарий: заказчик уже выбрал специалиста, но тот ещё не подтвердил — для него чат уже должен быть доступен.
+    const applicationParticipants = [
+      application.user,
+      application.currentSpecialist || application.proposedSpecialist
+    ].filter(Boolean);
+
+    let conversation = await Conversation.findOne({
+      application: applicationId,
+      participants: { $all: applicationParticipants }
+    });
+
+    if (!conversation && applicationParticipants.length >= 2) {
       conversation = new Conversation({
         application: applicationId,
-        participants: [application.user, application.currentSpecialist],
+        participants: applicationParticipants,
         type: 'application'
       });
       await conversation.save();
@@ -75,22 +90,46 @@ exports.sendApplicationMessage = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Заявка не найдена' });
     }
 
-    const isParticipant = 
-      application.user.toString() === userId.toString() ||
-      (application.currentSpecialist && 
-       application.currentSpecialist.toString() === userId.toString());
+    const isOwner = application.user.toString() === userId.toString();
+    const isCurrentSpecialist = application.currentSpecialist && application.currentSpecialist.toString() === userId.toString();
+    const isProposedSpecialist = application.proposedSpecialist &&
+      application.proposedSpecialist.toString() === userId.toString() &&
+      application.pendingSpecialistConfirmation;
 
-    if (!isParticipant) {
-      return res.status(403).json({ success: false, message: 'Доступ запрещен' });
+    const existingConversation = await Conversation.findOne({
+      application: applicationId,
+      participants: userId
+    });
+
+    const isParticipant = isOwner || isCurrentSpecialist || isProposedSpecialist || !!existingConversation;
+
+    if (req.user.role === 'specialist' && !isOwner && !isCurrentSpecialist && !isProposedSpecialist && !existingConversation?.specialistUnlocked) {
+      return res.status(403).json({ success: false, message: 'Доступ к переписке закрыт: сначала клиент должен написать первое сообщение' });
     }
 
-    // Находим чат
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Доступ запрещен: этот чат закреплен за другим специалистом' });
+    }
+
+    // Находим чат. Для выбранного специалиста до подтверждения он должен существовать и быть доступным по applicationId.
+    const applicationParticipants = [
+      application.user,
+      application.currentSpecialist || application.proposedSpecialist
+    ].filter(Boolean);
+
     let conversation = await Conversation.findOne({
       application: applicationId,
-      participants: { 
-        $all: [application.user, application.currentSpecialist].filter(Boolean)
-      }
+      participants: { $all: applicationParticipants }
     });
+
+    if (!conversation && applicationParticipants.length >= 2) {
+      conversation = new Conversation({
+        application: applicationId,
+        participants: applicationParticipants,
+        type: 'application'
+      });
+      await conversation.save();
+    }
 
     if (!conversation) {
       return res.status(404).json({ 

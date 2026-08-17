@@ -11,16 +11,21 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../utils/apiClient';
 import { io } from 'socket.io-client';
 import { API_URL } from '../config';
-import ReviewModal from './ReviewModal';
+
+const { width } = Dimensions.get('window');
 
 const ChatScreen = ({ route, navigation }) => {
-  const { conversationId, otherUserId, otherUserName, applicationId } = route.params;
+  const routeParams = route?.params || {};
+  const { conversationId, otherUserId, otherUserName } = routeParams;
+  const applicationId = routeParams.applicationId || routeParams.application?._id || null;
   const [messages, setMessages] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [messageText, setMessageText] = useState('');
@@ -28,24 +33,38 @@ const ChatScreen = ({ route, navigation }) => {
   const [sending, setSending] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState(conversationId);
   const [application, setApplication] = useState(null);
-  const [otherUser, setOtherUser] = useState(null); // Информация о другом пользователе (lastSeen, статус онлайна)
-  const [accessDenied, setAccessDenied] = useState(false); // Доступ запрещён (специалист ещё не разблокирован)
-  const [response, setResponse] = useState(null); // Данные об отклике специалиста
+  const [applicationLoading, setApplicationLoading] = useState(false);
+  const [otherUser, setOtherUser] = useState(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [response, setResponse] = useState(null);
   const [responseLoading, setResponseLoading] = useState(false);
-  const [reviewModalVisible, setReviewModalVisible] = useState(false);
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [cardExpanded, setCardExpanded] = useState(false);
+  const [applicationTitle, setApplicationTitle] = useState(route?.params?.applicationTitle || 'Заявка');
+
+  const getUserId = (user) => user?._id || user?.id || null;
+  const currentUserId = getUserId(currentUser);
+  const normalizedRole = currentUser?.role === 'specialist' || currentUser?.role === 'profi' || currentUser?.activeRole === 'specialist' ? 'specialist' : 'user';
 
   const socketRef = useRef(null);
 
   useEffect(() => {
     const loadChat = async () => {
       try {
+        if (!otherUserId) {
+          setMessages([]);
+          setCurrentConversationId(conversationId || null);
+          setApplication(null);
+          setResponse(null);
+          setLoading(false);
+          return;
+        }
+
         const userStr = await AsyncStorage.getItem('@currentUser');
         if (userStr) {
           const user = JSON.parse(userStr);
-          setCurrentUser(user);
+          const normalizedUser = { ...user, _id: user?._id || user?.id };
+          setCurrentUser(normalizedUser);
 
-          // Load other user info (including lastSeen)
           try {
             const otherUserResponse = await apiClient.get(`/api/auth/user/${otherUserId}`);
             const otherUserData = otherUserResponse?.data?.data || otherUserResponse?.data || null;
@@ -57,9 +76,11 @@ const ChatScreen = ({ route, navigation }) => {
           }
 
           let convId = conversationId;
-          if (!convId) {
+          const validCurrentUserId = normalizedUser?._id || normalizedUser?.id;
+
+          if (!convId && applicationId && validCurrentUserId && otherUserId) {
             const response = await apiClient.post('/api/conversations', {
-              participants: [user._id, otherUserId],
+              participants: [validCurrentUserId, otherUserId],
               applicationId: applicationId,
             });
             const conv = response?.data?.data || response?.data || null;
@@ -67,14 +88,25 @@ const ChatScreen = ({ route, navigation }) => {
             setCurrentConversationId(convId);
           }
 
-          await loadMessages(convId);
+          const chatLoadTasks = [];
 
-          // Load response data if application exists
-          if (applicationId) {
-            await loadResponseData(applicationId, user._id);
+          if (convId) {
+            chatLoadTasks.push(loadMessages(convId));
+          } else {
+            setMessages([]);
           }
 
-          // Initialize socket connection once we have conversation id
+          if (applicationId) {
+            chatLoadTasks.push(loadApplicationData(applicationId));
+            chatLoadTasks.push(loadResponseData(applicationId, validCurrentUserId || user?._id || user?.id));
+          } else {
+            setResponse(null);
+          }
+
+          if (chatLoadTasks.length > 0) {
+            await Promise.allSettled(chatLoadTasks);
+          }
+
           try {
             if (!socketRef.current) {
               socketRef.current = io(API_URL, { transports: ['websocket'] });
@@ -90,34 +122,27 @@ const ChatScreen = ({ route, navigation }) => {
               socketRef.current.off('work_accepted');
               
               socketRef.current.on('message', (payload) => {
-                // payload may be message object or { conversation, message }
                 const incoming = payload?.message || payload;
                 if (!incoming) return;
-                // Only add if belongs to this conversation
                 const convIdStr = convId.toString();
                 if (payload?.conversation && payload.conversation.toString() !== convIdStr) return;
 
                 setMessages(prev => {
-                  // avoid duplicates
                   if (prev.find(m => m._id === incoming._id)) return prev;
                   return [...prev, incoming].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
                 });
 
-                // mark incoming messages as read if from other user
                 if (!incoming.isRead && incoming.from !== user?._id) {
                   apiClient.patch(`/api/messages/${incoming._id}/read`).catch(() => {});
                 }
               });
 
-              // Listen for unlock event (when client sends first message)
               socketRef.current.on('unlock_chat', (payload) => {
                 console.log('Chat unlocked:', payload);
                 setAccessDenied(false);
-                // Reload messages after unlock
                 loadMessages(convId);
               });
 
-              // Proposal events
               socketRef.current.on('proposal_selected', () => {
                 console.log('Proposal selected by client');
                 if (applicationId) loadResponseData(applicationId, user._id);
@@ -155,17 +180,8 @@ const ChatScreen = ({ route, navigation }) => {
       }
     };
 
-    // Load application if applicationId provided
-    const loadApplication = async () => {
-      if (applicationId) {
-        await loadApplicationData(applicationId);
-      }
-    };
-
     loadChat();
-    loadApplication();
 
-    // Refresh other user's info every 5 seconds to update online status
     const otherUserInterval = setInterval(() => {
       if (otherUserId) {
         apiClient.get(`/api/auth/user/${otherUserId}`)
@@ -180,12 +196,10 @@ const ChatScreen = ({ route, navigation }) => {
     }, 5000);
 
     return () => {
-      // leave room and disconnect socket if present
       try {
         if (socketRef.current && currentConversationId) {
           socketRef.current.emit('leave', currentConversationId);
         }
-        // cleanup listeners
         if (socketRef.current) {
           socketRef.current.off('message');
           socketRef.current.off('unlock_chat');
@@ -198,24 +212,74 @@ const ChatScreen = ({ route, navigation }) => {
       } catch (e) {}
       clearInterval(otherUserInterval);
     };
-  }, [conversationId, otherUserId]);
+  }, [conversationId, otherUserId, applicationId]);
 
   const loadApplicationData = async (appId) => {
+    if (!appId) {
+      setApplication(null);
+      setApplicationLoading(false);
+      setApplicationTitle(routeParams?.applicationTitle || 'Заявка');
+      return;
+    }
+
+    setApplicationLoading(true);
+
     try {
       const res = await apiClient.get(`/api/applications/${appId}`);
       const app = res?.data?.data || res?.data || null;
-      if (app) setApplication(app);
+      if (app) {
+        setApplication(app);
+        setApplicationTitle(app.title || routeParams?.applicationTitle || 'Заявка');
+      } else {
+        setApplication(null);
+        setApplicationTitle(routeParams?.applicationTitle || 'Заявка');
+      }
     } catch (err) {
       console.log('Application not found or already deleted');
+      setApplication(null);
+      setApplicationTitle(routeParams?.applicationTitle || 'Заявка');
+    } finally {
+      setApplicationLoading(false);
     }
   };
 
   const loadResponseData = async (appId, userId) => {
+    if (!appId) {
+      setResponse(null);
+      return;
+    }
+
     try {
       setResponseLoading(true);
-      const res = await apiClient.get(`/api/applications/${appId}/responses/${otherUserId}`);
-      const resp = res?.data?.data || res?.data || null;
-      if (resp) setResponse(resp);
+      const currentRole = currentUser?.role || currentUser?.activeRole || 'user';
+      const effectiveRole = currentRole === 'specialist' || currentRole === 'profi' || currentUser?.activeRole === 'specialist' ? 'specialist' : 'user';
+      const targetUserId = effectiveRole === 'specialist' ? (userId || currentUser?._id || currentUser?.id) : otherUserId;
+      if (!targetUserId) {
+        setResponse(null);
+        return;
+      }
+
+      try {
+        const res = await apiClient.get(`/api/applications/${appId}/responses/${targetUserId}`);
+        const resp = res?.data?.data || res?.data || null;
+        if (resp) {
+          setResponse(resp);
+          return;
+        }
+      } catch (err) {
+        console.log('Response not found by specialist id, fallback to list scan');
+      }
+
+      const listRes = await apiClient.get(`/api/applications/${appId}/responses`);
+      const list = listRes?.data?.data || listRes?.data || [];
+      const matched = Array.isArray(list)
+        ? list.find((item) => {
+            const specialistId = item?.specialist?._id || item?.specialist || item?.specialistId;
+            return String(specialistId) === String(targetUserId);
+          })
+        : null;
+
+      setResponse(matched || null);
     } catch (err) {
       console.log('Response not found');
       setResponse(null);
@@ -225,6 +289,12 @@ const ChatScreen = ({ route, navigation }) => {
   };
 
   const loadMessages = async (convId) => {
+    if (!convId) {
+      setMessages([]);
+      setAccessDenied(false);
+      return;
+    }
+
     try {
       setAccessDenied(false);
       const response = await apiClient.get(`/api/messages/${convId}`);
@@ -232,7 +302,6 @@ const ChatScreen = ({ route, navigation }) => {
       if (Array.isArray(list)) {
         setMessages(list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
         
-        // Mark unread messages from other user as read
         list.forEach(msg => {
           if (!msg.isRead && msg.from !== currentUser?._id) {
             apiClient.patch(`/api/messages/${msg._id}/read`).catch(() => {});
@@ -240,7 +309,6 @@ const ChatScreen = ({ route, navigation }) => {
         });
       }
     } catch (error) {
-      // Check if access denied (specialist not unlocked yet)
       if (error?.response?.status === 403) {
         setAccessDenied(true);
         console.log('Access denied - specialist waiting for client first message');
@@ -251,7 +319,6 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  // Формат статуса "был в сети"
   const getOnlineStatus = () => {
     if (!otherUser?.lastSeen) return 'Статус неизвестен';
     
@@ -275,18 +342,14 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  // Клиент выбирает специалиста
   const handleSelectSpecialist = async () => {
     if (!response || !applicationId) return;
-    
     try {
       setResponseLoading(true);
       await apiClient.post(`/api/applications/${applicationId}/responses/${response._id}/accept`);
-      
-      // Reload response data and application
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for server update
       await loadResponseData(applicationId, currentUser._id);
       await loadApplicationData(applicationId);
-      
       Alert.alert('Успешно', 'Вы выбрали этого специалиста. Ожидается его подтверждение.');
     } catch (err) {
       Alert.alert('Ошибка', err?.response?.data?.message || 'Не удалось выбрать специалиста');
@@ -295,7 +358,6 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  // Клиент отклоняет отклик
   const handleRejectResponse = async () => {
     if (!response || !applicationId) return;
     
@@ -308,11 +370,8 @@ const ChatScreen = ({ route, navigation }) => {
           try {
             setResponseLoading(true);
             await apiClient.post(`/api/applications/${applicationId}/responses/${response._id}/decline`);
-            
-            // Reload
             await loadResponseData(applicationId, currentUser._id);
             await loadApplicationData(applicationId);
-            
             Alert.alert('Успешно', 'Вы отклонили этого специалиста.');
           } catch (err) {
             Alert.alert('Ошибка', err?.response?.data?.message || 'Не удалось отклонить отклик');
@@ -324,18 +383,15 @@ const ChatScreen = ({ route, navigation }) => {
     ]);
   };
 
-  // Специалист подтверждает выбор
   const handleConfirmProposal = async () => {
     if (!response || !applicationId) return;
     
     try {
       setResponseLoading(true);
       await apiClient.post(`/api/applications/${applicationId}/responses/${response._id}/confirm`);
-      
-      // Reload
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for server update
       await loadResponseData(applicationId, currentUser._id);
       await loadApplicationData(applicationId);
-      
       Alert.alert('Успешно', 'Вы подтвердили выбор. Заказ перешёл в статус "в работе".');
     } catch (err) {
       Alert.alert('Ошибка', err?.response?.data?.message || 'Не удалось подтвердить выбор');
@@ -344,7 +400,6 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  // Специалист отклоняет выбор
   const handleDeclineProposal = async () => {
     if (!response || !applicationId) return;
     
@@ -357,11 +412,8 @@ const ChatScreen = ({ route, navigation }) => {
           try {
             setResponseLoading(true);
             await apiClient.post(`/api/applications/${applicationId}/responses/${response._id}/decline`);
-            
-            // Reload
             await loadResponseData(applicationId, currentUser._id);
             await loadApplicationData(applicationId);
-            
             Alert.alert('Успешно', 'Вы отклонили этот заказ.');
           } catch (err) {
             Alert.alert('Ошибка', err?.response?.data?.message || 'Не удалось отклонить заказ');
@@ -373,7 +425,6 @@ const ChatScreen = ({ route, navigation }) => {
     ]);
   };
 
-  // Специалист отмечает работу как завершённую
   const handleMarkWorkComplete = async () => {
     if (!applicationId) return;
     
@@ -385,10 +436,8 @@ const ChatScreen = ({ route, navigation }) => {
           try {
             setResponseLoading(true);
             await apiClient.post(`/api/applications/${applicationId}/markWorkComplete`);
-            
-            // Reload
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wait for server update
             await loadApplicationData(applicationId);
-            
             Alert.alert('Успешно', 'Работа отмечена как завершённая.');
           } catch (err) {
             Alert.alert('Ошибка', err?.response?.data?.message || 'Ошибка при отметке работы');
@@ -400,17 +449,14 @@ const ChatScreen = ({ route, navigation }) => {
     ]);
   };
 
-  // Клиент принимает работу
   const handleAcceptWork = async () => {
     if (!applicationId) return;
     
     try {
       setResponseLoading(true);
       await apiClient.post(`/api/applications/${applicationId}/acceptWork`);
-      
-      // Reload
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for server update
       await loadApplicationData(applicationId);
-      
       Alert.alert('Успешно', 'Вы подтвердили приём работы. Теперь оставьте отзыв.');
     } catch (err) {
       Alert.alert('Ошибка', err?.response?.data?.message || 'Ошибка при приёме работы');
@@ -419,44 +465,16 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
-  // Отправка отзыва
-  const handleSubmitReview = async (reviewData) => {
+  const handleOpenReviewScreen = () => {
     if (!applicationId) return;
-    
-    try {
-      setReviewSubmitting(true);
-      
-      const formData = new FormData();
-      formData.append('rating', reviewData.rating);
-      formData.append('text', reviewData.text);
-      
-      if (reviewData.image) {
-        const fileName = reviewData.image.split('/').pop();
-        const fileType = 'image/' + fileName.split('.').pop();
-        formData.append('image', {
-          uri: Platform.OS === 'ios' ? reviewData.image.replace('file://', '') : reviewData.image,
-          type: fileType,
-          name: fileName,
-        });
-      }
-      
-      await apiClient.post(`/api/applications/${applicationId}/createReview`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      setReviewModalVisible(false);
-      
-      // Reload
-      await loadApplicationData(applicationId);
-      
-      Alert.alert('Успешно', 'Ваш отзыв добавлен. Заказ закрыт.');
-    } catch (err) {
-      Alert.alert('Ошибка', err?.response?.data?.message || 'Ошибка при отправке отзыва');
-    } finally {
-      setReviewSubmitting(false);
-    }
+
+    navigation.navigate('ReviewScreen', {
+      applicationId,
+      userName: otherUserName || 'Специалист',
+      onReviewSubmitted: async () => {
+        await loadApplicationData(applicationId);
+      },
+    });
   };
 
   const handleSendMessage = async () => {
@@ -469,7 +487,6 @@ const ChatScreen = ({ route, navigation }) => {
       const messageContent = messageText.trim();
       setMessageText('');
 
-      // Send message via REST API
       try {
         const response = await apiClient.post('/api/messages', {
           conversationId: currentConversationId,
@@ -491,7 +508,16 @@ const ChatScreen = ({ route, navigation }) => {
   };
 
   const renderMessageItem = ({ item }) => {
-    const isCurrentUser = item.from === currentUser?._id;
+    const resolveUserId = (user) => {
+      if (!user) return '';
+      if (typeof user === 'string') return user;
+      if (typeof user === 'object') return String(user._id || user.id || user.userId || '');
+      return String(user);
+    };
+
+    const senderId = resolveUserId(item?.from || item?.sender || item?.user);
+    const currentUserId = resolveUserId(currentUser);
+    const isCurrentUser = String(senderId) === String(currentUserId);
 
     return (
       <View
@@ -514,21 +540,223 @@ const ChatScreen = ({ route, navigation }) => {
           >
             {item.text}
           </Text>
-          <View style={styles.messageFooter}>
-            <Text
-              style={[
-                styles.messageTime,
-                isCurrentUser ? styles.currentUserTime : styles.otherUserTime,
-              ]}
-            >
-              {new Date(item.createdAt).toLocaleTimeString('ru-RU', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-          </View>
+          <Text
+            style={[
+              styles.messageTime,
+              isCurrentUser ? styles.currentUserTime : styles.otherUserTime,
+            ]}
+          >
+            {new Date(item.createdAt).toLocaleTimeString('ru-RU', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
         </View>
       </View>
+    );
+  };
+
+  // Компактная карточка заявки для всегда видного отображения
+  const renderActionButton = ({
+    label,
+    onPress,
+    variant = 'acceptBtn',
+    disabled = false,
+    loading = false,
+    fullWidth = false,
+  }) => (
+    <TouchableOpacity
+      style={[
+        styles.actionBtn,
+        styles[variant],
+        fullWidth && styles.actionBtnFullWidth,
+        (disabled || loading) && styles.actionBtnDisabled,
+      ]}
+      onPress={onPress}
+      disabled={disabled || loading}
+      activeOpacity={0.85}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color="#fff" />
+      ) : (
+        <Text style={styles.actionBtnText}>{label}</Text>
+      )}
+    </TouchableOpacity>
+  );
+
+  const renderApplicationCard = () => {
+    const app = application || { _id: applicationId, title: applicationTitle || 'Заявка', status: 'open' };
+
+    const clientHasWrittenFirstMessage = Array.isArray(messages) &&
+      messages.some(msg => String(msg.from || msg.sender || msg.user) === String(otherUserId));
+
+    // Если специалист выбран клиентом и ждёт подтверждения, он считается proposedSpecialist.
+    const isProposedSpecialist = app.proposedSpecialist && (
+      String(app.proposedSpecialist._id || app.proposedSpecialist) === String(currentUser?._id || currentUser?.id)
+    );
+
+    // Если уже подтверждён и работает по заказу, специалист считается currentSpecialist.
+    const isCurrentSpecialist = app.currentSpecialist && (
+      String(app.currentSpecialist._id || app.currentSpecialist) === String(currentUser?._id || currentUser?.id)
+    );
+
+    // Для клиента доступ к выбору специалиста должен появляться только после первого сообщения клиента,
+    // а не после любого сообщения в переписке.
+    const canClientSelectSpecialist = normalizedRole === 'user' &&
+      app.status === 'open' &&
+      !app.pendingSpecialistConfirmation &&
+      !!response &&
+      response.status !== 'rejected' &&
+      clientHasWrittenFirstMessage;
+
+    const canSpecialistConfirmOrder = normalizedRole === 'specialist' &&
+      app.pendingSpecialistConfirmation &&
+      isProposedSpecialist;
+
+    const statusColor = 
+      app.status === 'open' ? '#4CAF50' :
+      app.status === 'in_progress' ? '#FF9800' :
+      '#2196F3';
+
+    const statusLabel = 
+      app.status === 'open' ? 'Открыта' :
+      app.status === 'in_progress' ? 'В работе' :
+      'Завершена';
+
+    return (
+      <TouchableOpacity
+        style={[styles.cardHeader, cardExpanded && styles.cardHeaderExpanded]}
+        onPress={() => {
+          const detailAppId = app?._id || applicationId;
+          if (detailAppId) {
+            navigation.navigate('ApplicationDetail', { applicationId: detailAppId });
+          }
+        }}
+        activeOpacity={0.7}
+      >
+        {/* Compact View */}
+        <View style={styles.cardCompact}>
+          <View style={styles.cardLeft}>
+            <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+              <Text style={styles.statusText}>{statusLabel}</Text>
+            </View>
+            <View style={styles.cardInfo}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {app.title || applicationTitle}
+              </Text>
+              {application && app.summ ? (
+                <Text style={styles.cardPrice}>{Number(app.summ)} ₸</Text>
+              ) : application ? (
+                <Text style={styles.cardPrice}>Договорная</Text>
+              ) : applicationLoading ? (
+                <Text style={[styles.cardPrice, { color: '#999' }]}>Загрузка...</Text>
+              ) : (
+                <Text style={[styles.cardPrice, { color: '#666' }]}>{app.title || 'Заявка'}</Text>
+              )}
+            </View>
+          </View>
+          <Ionicons 
+            name="chevron-forward" 
+            size={20} 
+            color="#EC1B23" 
+            style={styles.chevron}
+          />
+        </View>
+
+        {/* Action Buttons */}
+        {!accessDenied && (
+          <View>
+            {normalizedRole === 'user' && app.status === 'open' && !app.pendingSpecialistConfirmation && (
+              <Text style={styles.selectionHintText}>
+                {clientHasWrittenFirstMessage
+                  ? 'После первого контакта можно выбрать специалиста или отклонить отклик.'
+                  : 'Напишите первое сообщение, чтобы начать контакт, затем после ответа можно выбрать специалиста.'}
+              </Text>
+            )}
+
+            <View style={styles.actionButtonsRow}>
+              {renderActionButton({
+                label: 'Подробнее',
+                variant: 'viewBtn',
+                onPress: () => {
+                  const detailAppId = app?._id || applicationId;
+                  if (detailAppId) {
+                    navigation.navigate('ApplicationDetail', { applicationId: detailAppId });
+                  }
+                },
+              })}
+
+              {canClientSelectSpecialist && (
+                <>
+                  {renderActionButton({
+                    label: 'Отклонить отклик',
+                    variant: 'declineBtn',
+                    onPress: handleRejectResponse,
+                    disabled: responseLoading,
+                    loading: responseLoading,
+                  })}
+                  {renderActionButton({
+                    label: 'Выбрать специалиста',
+                    variant: 'acceptBtn',
+                    onPress: handleSelectSpecialist,
+                    disabled: responseLoading,
+                    loading: responseLoading,
+                  })}
+                </>
+              )}
+
+              {canSpecialistConfirmOrder && (
+                <>
+                  {renderActionButton({
+                    label: 'Отклонить заказ',
+                    variant: 'declineBtn',
+                    onPress: handleDeclineProposal,
+                    disabled: responseLoading,
+                    loading: responseLoading,
+                  })}
+                  {renderActionButton({
+                    label: 'Подтвердить заказ',
+                    variant: 'acceptBtn',
+                    onPress: handleConfirmProposal,
+                    disabled: responseLoading,
+                    loading: responseLoading,
+                  })}
+                </>
+              )}
+
+              {normalizedRole === 'specialist' && app.status === 'in_progress' && isCurrentSpecialist && !app.workCompleted && !app.workAccepted && (
+                renderActionButton({
+                  label: 'Завершить работу',
+                  variant: 'completeBtn',
+                  onPress: handleMarkWorkComplete,
+                  disabled: responseLoading,
+                  loading: responseLoading,
+                })
+              )}
+
+              {normalizedRole === 'user' && app.status === 'in_progress' && app.workCompleted && !app.workAccepted && (
+                renderActionButton({
+                  label: 'Подтвердить сдачу',
+                  variant: 'acceptBtn',
+                  onPress: handleAcceptWork,
+                  disabled: responseLoading,
+                  loading: responseLoading,
+                })
+              )}
+
+              {app.status === 'in_progress' && app.workAccepted && !app.review && (
+                renderActionButton({
+                  label: 'Оставить отзыв',
+                  variant: 'reviewBtn',
+                  onPress: handleOpenReviewScreen,
+                  disabled: false,
+                  loading: false,
+                })
+              )}
+            </View>
+          </View>
+        )}
+      </TouchableOpacity>
     );
   };
 
@@ -536,22 +764,16 @@ const ChatScreen = ({ route, navigation }) => {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.chatHeaderTouchable}
-            onPress={() => navigation.navigate('SpecialistProfileView', { userId: otherUserId, userName: otherUserName })}
-          >
-            <View style={styles.chatHeader}>
-              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                <Ionicons name="chevron-back" size={28} color="#000" />
-              </TouchableOpacity>
-              <View style={styles.headerTitleContainer}>
-                <Text style={styles.headerTitle}>{otherUserName}</Text>
-                <Text style={styles.headerSubtitle}>Загрузка...</Text>
-              </View>
-              <View style={{ width: 28 }} />
+          <View style={styles.chatHeader}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Ionicons name="chevron-back" size={28} color="#000" />
+            </TouchableOpacity>
+            <View style={styles.headerTitleContainer}>
+              <Text style={styles.headerTitle}>{otherUserName}</Text>
+              <Text style={styles.headerSubtitle}>Загрузка...</Text>
             </View>
-          </TouchableOpacity>
+            <View style={{ width: 28 }} />
+          </View>
         </SafeAreaView>
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color="#EC1B23" />
@@ -566,28 +788,23 @@ const ChatScreen = ({ route, navigation }) => {
       style={styles.container}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      {/* Chat Header with specialist info */}
+      {/* Header */}
       <SafeAreaView style={styles.safeArea}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={styles.chatHeaderTouchable}
-          onPress={() => navigation.navigate('SpecialistProfileView', { userId: otherUserId, userName: otherUserName })}
-        >
-          <View style={styles.chatHeader}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-              <Ionicons name="chevron-back" size={28} color="#000" />
-            </TouchableOpacity>
-            <View style={styles.headerTitleContainer}>
-              <Text style={styles.headerTitle}>{otherUserName}</Text>
-              <Text style={styles.headerSubtitle}>{getOnlineStatus()}</Text>
-            </View>
-            <View style={{ width: 28 }} />
+        <View style={styles.chatHeader}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={28} color="#000" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>{otherUserName}</Text>
+            <Text style={styles.headerSubtitle}>{getOnlineStatus()}</Text>
           </View>
-        </TouchableOpacity>
+          <View style={{ width: 28 }} />
+        </View>
       </SafeAreaView>
 
       {accessDenied ? (
         <View style={styles.accessDeniedContainer}>
+          {renderApplicationCard()}
           <Ionicons name="lock-closed" size={64} color="#999" style={styles.lockIcon} />
           <Text style={styles.accessDeniedTitle}>Доступ закрыт</Text>
           <Text style={styles.accessDeniedText}>
@@ -596,208 +813,26 @@ const ChatScreen = ({ route, navigation }) => {
         </View>
       ) : (
         <>
+          {/* Application Card - ALWAYS VISIBLE */}
+          {renderApplicationCard()}
+
+          {/* Messages */}
           <FlatList
             data={messages}
             renderItem={renderMessageItem}
             keyExtractor={(item) => item._id}
             contentContainerStyle={styles.messagesContent}
             inverted={false}
-            onEndReachedThreshold={0.5}
-            ListHeaderComponent={
-              application ? (
-                <View style={styles.applicationCard}>
-                  {/* Header */}
-                  <View style={styles.applicationHeader}>
-                    <Ionicons name="document-text" size={20} color="#EC1B23" />
-                    <Text style={styles.applicationTitle}>{application.title}</Text>
-                  </View>
-
-                  {/* Info */}
-                  {application.info && (
-                    <Text style={styles.applicationInfo}>{application.info}</Text>
-                  )}
-
-                  {/* Details Grid */}
-                  <View style={styles.detailsGrid}>
-                    {application.summ && (
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Бюджет</Text>
-                        <Text style={styles.detailValue}>{application.summ} ₸</Text>
-                      </View>
-                    )}
-                    {application.deadline && (
-                      <View style={styles.detailItem}>
-                        <Text style={styles.detailLabel}>Срок</Text>
-                        <Text style={styles.detailValue}>
-                          {new Date(application.deadline).toLocaleDateString('ru-RU')}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Categories */}
-                  {application.categories && application.categories.length > 0 && (
-                    <View style={styles.categoriesContainer}>
-                      <Text style={styles.categoriesLabel}>Категории:</Text>
-                      <View style={styles.categoriesList}>
-                        {application.categories.map((cat, idx) => (
-                          <View key={idx} style={styles.categoryBadge}>
-                            <Text style={styles.categoryText}>
-                              {cat.name || cat}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Status Badge */}
-                  <View style={styles.statusContainer}>
-                    <Text style={styles.statusLabel}>
-                      {application.status === 'open' ? '🟢 Открыт' : 
-                       application.status === 'in_progress' ? '🟠 В работе' : 
-                       '✅ Завершён'}
-                    </Text>
-                  </View>
-
-                  {/* Action Buttons - Depend on role and status */}
-                  {response && response.status !== 'rejected' && application.status === 'open' && (
-                    <View style={styles.actionButtons}>
-                      {/* Client: Reject or Select Specialist */}
-                      {currentUser?.role === 'user' && (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.actionButton, styles.rejectButton]}
-                            onPress={handleRejectResponse}
-                            disabled={responseLoading}
-                          >
-                            {responseLoading ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <>
-                                <Ionicons name="close-circle" size={16} color="#fff" />
-                                <Text style={styles.actionButtonText}>Отклонить</Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.actionButton, styles.acceptButton]}
-                            onPress={handleSelectSpecialist}
-                            disabled={responseLoading}
-                          >
-                            {responseLoading ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <>
-                                <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                                <Text style={styles.actionButtonText}>Выбрать</Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                        </>
-                      )}
-
-                      {/* Specialist: Confirm or Decline if pending confirmation */}
-                      {currentUser?.role === 'specialist' && application.pendingSpecialistConfirmation && (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.actionButton, styles.rejectButton]}
-                            onPress={handleDeclineProposal}
-                            disabled={responseLoading}
-                          >
-                            {responseLoading ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <>
-                                <Ionicons name="close-circle" size={16} color="#fff" />
-                                <Text style={styles.actionButtonText}>Отклонить</Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.actionButton, styles.acceptButton]}
-                            onPress={handleConfirmProposal}
-                            disabled={responseLoading}
-                          >
-                            {responseLoading ? (
-                              <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                              <>
-                                <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                                <Text style={styles.actionButtonText}>Согласиться</Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Work Completion Buttons - When in_progress */}
-                  {application.status === 'in_progress' && !application.workAccepted && (
-                    <View style={styles.actionButtons}>
-                      {/* Specialist: Mark work complete */}
-                      {currentUser?.role === 'specialist' && !application.workCompleted && (
-                        <TouchableOpacity
-                          style={[styles.actionButton, styles.completeButton]}
-                          onPress={handleMarkWorkComplete}
-                          disabled={responseLoading}
-                        >
-                          {responseLoading ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <>
-                              <Ionicons name="checkmark-done" size={16} color="#fff" />
-                              <Text style={styles.actionButtonText}>Работа сделана</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                      )}
-
-                      {/* Client: Accept work when specialist marked complete */}
-                      {currentUser?.role === 'user' && application.workCompleted && (
-                        <TouchableOpacity
-                          style={[styles.actionButton, styles.acceptButton]}
-                          onPress={handleAcceptWork}
-                          disabled={responseLoading}
-                        >
-                          {responseLoading ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <>
-                              <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                              <Text style={styles.actionButtonText}>Принять работу</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Review Button - When work accepted */}
-                  {application.status === 'in_progress' && application.workAccepted && !application.review && (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.reviewButton]}
-                      onPress={() => setReviewModalVisible(true)}
-                      disabled={responseLoading}
-                    >
-                      <Ionicons name="star" size={16} color="#fff" />
-                      <Text style={styles.actionButtonText}>Оставить отзыв</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {/* Closed Status */}
-                  {application.status === 'closed' && (
-                    <View style={styles.closedBanner}>
-                      <Ionicons name="checkmark-done-circle" size={20} color="#4CAF50" />
-                      <Text style={styles.closedBannerText}>Заказ завершён</Text>
-                    </View>
-                  )}
-                </View>
-              ) : null
+            scrollEnabled={messages.length > 0}
+            nestedScrollEnabled={true}
+            ListEmptyComponent={
+              <View style={styles.emptyMessages}>
+                <Text style={styles.emptyText}>Нет сообщений</Text>
+              </View>
             }
           />
 
+          {/* Input Area */}
           <View style={styles.inputArea}>
             <View style={styles.inputContainer}>
               <TextInput
@@ -827,14 +862,6 @@ const ChatScreen = ({ route, navigation }) => {
             </View>
           </View>
 
-          {/* Review Modal */}
-          <ReviewModal
-            visible={reviewModalVisible}
-            onClose={() => setReviewModalVisible(false)}
-            onSubmit={handleSubmitReview}
-            loading={reviewSubmitting}
-            userName={otherUserName}
-          />
         </>
       )}
     </KeyboardAvoidingView>
@@ -848,9 +875,6 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     backgroundColor: '#fff',
-  },
-  chatHeaderTouchable: {
-    width: '100%',
   },
   chatHeader: {
     flexDirection: 'row',
@@ -897,6 +921,7 @@ const styles = StyleSheet.create({
   },
   lockIcon: {
     marginBottom: 20,
+    marginTop: 40,
     opacity: 0.6,
   },
   accessDeniedTitle: {
@@ -912,55 +937,130 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  cardHeader: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEFEF',
+  },
+  cardHeaderExpanded: {
+    backgroundColor: '#FFF9F9',
+  },
+  cardCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  cardLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginRight: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+  },
+  cardPrice: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EC1B23',
+    marginTop: 2,
+  },
+  chevron: {
+    marginLeft: 8,
+  },
+  selectionHintText: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#666',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  actionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    minHeight: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  actionBtnFullWidth: {
+    flexGrow: 1,
+    minWidth: '45%',
+  },
+  actionBtnDisabled: {
+    opacity: 0.75,
+  },
+  viewBtn: {
+    backgroundColor: '#F2F2F2',
+  },
+  actionBtnText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  viewBtnText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  acceptBtn: {
+    backgroundColor: '#4CAF50',
+  },
+  declineBtn: {
+    backgroundColor: '#EC1B23',
+  },
+  completeBtn: {
+    backgroundColor: '#2196F3',
+  },
+  reviewBtn: {
+    backgroundColor: '#FFB800',
+  },
   messagesContent: {
     paddingVertical: 12,
     paddingHorizontal: 12,
   },
-  applicationCard: {
-    backgroundColor: '#FFF9F9',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#EC1B23',
-  },
-  applicationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  applicationTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#000',
-    marginLeft: 8,
+  emptyMessages: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 100,
   },
-  applicationInfo: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 8,
-    lineHeight: 16,
-  },
-  applicationBadge: {
-    backgroundColor: '#FFF0F2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  applicationBadgeText: {
-    fontSize: 11,
-    color: '#EC1B23',
-    fontWeight: '600',
-  },
-  applicationDate: {
-    fontSize: 11,
+  emptyText: {
+    fontSize: 14,
     color: '#999',
   },
   messageContainer: {
-    marginVertical: 4,
+    marginVertical: 6,
     paddingHorizontal: 12,
   },
   currentUserMessage: {
@@ -972,7 +1072,7 @@ const styles = StyleSheet.create({
   messageBubble: {
     maxWidth: '75%',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 12,
   },
   currentUserBubble: {
@@ -982,8 +1082,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8E8E8',
   },
   messageText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   currentUserText: {
     color: '#fff',
@@ -991,14 +1091,9 @@ const styles = StyleSheet.create({
   otherUserText: {
     color: '#000',
   },
-  messageFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    justifyContent: 'flex-end',
-  },
   messageTime: {
     fontSize: 11,
+    marginTop: 4,
   },
   currentUserTime: {
     color: 'rgba(255, 255, 255, 0.7)',
@@ -1023,10 +1118,11 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 8,
-    fontSize: 13,
+    fontSize: 14,
     maxHeight: 100,
+    color: '#000',
   },
   sendButton: {
     width: 36,
@@ -1039,112 +1135,6 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#CCC',
-  },
-  detailsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: 12,
-    gap: 8,
-  },
-  detailItem: {
-    flex: 1,
-    backgroundColor: '#FFF0F2',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  detailLabel: {
-    fontSize: 11,
-    color: '#999',
-    marginBottom: 2,
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#000',
-  },
-  categoriesContainer: {
-    marginVertical: 12,
-  },
-  categoriesLabel: {
-    fontSize: 11,
-    color: '#999',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  categoriesList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  categoryBadge: {
-    backgroundColor: '#FFF0F2',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  categoryText: {
-    fontSize: 11,
-    color: '#EC1B23',
-    fontWeight: '500',
-  },
-  statusContainer: {
-    marginVertical: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#FFF9F9',
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  statusLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  acceptButton: {
-    backgroundColor: '#4CAF50',
-  },
-  rejectButton: {
-    backgroundColor: '#EC1B23',
-  },
-  completeButton: {
-    backgroundColor: '#2196F3',
-  },
-  reviewButton: {
-    backgroundColor: '#FFB800',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  closedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
-    paddingVertical: 10,
-    marginTop: 12,
-    gap: 6,
-  },
-  closedBannerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4CAF50',
   },
 });
 

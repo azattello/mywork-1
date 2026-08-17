@@ -32,25 +32,26 @@ exports.register = async (req, res) => {
   });
   await user.save();
 
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
+  const populatedUser = await User.findById(user._id).populate('city categories');
+  const accessToken = generateAccessToken(populatedUser);
+  const refreshToken = generateRefreshToken(populatedUser);
 
   // Store refresh token in DB
   const decoded = jwt.decode(refreshToken);
   const expiresAt = decoded && decoded.exp ? new Date(decoded.exp * 1000) : null;
-  await RefreshToken.create({ user: user._id, token: refreshToken, expiresAt });
+  await RefreshToken.create({ user: populatedUser._id, token: refreshToken, expiresAt });
 
   res.status(201).json({ 
     success: true, 
     data: { 
       user: { 
-        id: user._id, 
-        phone: user.phone, 
-        name: user.name,
-        surname: user.surname,
-        role: user.role,
-        city: user.city,
-        categories: user.categories
+        id: populatedUser._id, 
+        phone: populatedUser.phone, 
+        name: populatedUser.name,
+        surname: populatedUser.surname,
+        role: populatedUser.role,
+        city: populatedUser.city,
+        categories: populatedUser.categories
       }, 
       accessToken, 
       refreshToken 

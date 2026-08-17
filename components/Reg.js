@@ -15,9 +15,14 @@ import {
 	Alert,
 	FlatList,
 	ActivityIndicator,
+	Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../utils/apiClient';
+import {
+  toggleParentCategorySelection,
+  toggleSubcategorySelection,
+} from '../utils/categorySelection';
 
 export default function Reg({ navigation }) {
 	// State для многошаговой регистрации
@@ -30,10 +35,12 @@ export default function Reg({ navigation }) {
 	const [cities, setCities] = useState([]);
 	const [selectedCategories, setSelectedCategories] = useState([]);
 	const [categories, setCategories] = useState([]);
+	const [expandedCategories, setExpandedCategories] = useState([]);
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [currentRole, setCurrentRole] = useState('user');
 	const [citySearch, setCitySearch] = useState('');
+	const [cityModalVisible, setCityModalVisible] = useState(false);
 
 	// Загрузить города при монтировании
 	useEffect(() => {
@@ -45,11 +52,15 @@ export default function Reg({ navigation }) {
 	const loadCities = async () => {
 		try {
 			const res = await apiClient.request('get', '/api/cities');
-			if (res.data && res.data.data) {
-				setCities(res.data.data);
-			}
+			const list = Array.isArray(res?.data?.data)
+				? res.data.data
+				: Array.isArray(res?.data)
+					? res.data
+					: [];
+			setCities(list);
 		} catch (err) {
 			console.log('Error loading cities:', err.message);
+			setCities([]);
 		}
 	};
 
@@ -179,19 +190,58 @@ export default function Reg({ navigation }) {
 		}
 	};
 
-	// Обработчик выбора категории
+	// Обработчик выбора категории с поддержкой дерева родитель/подкатегория
+	const findCategoryParent = (targetId) => {
+		for (const parent of categories) {
+			if (parent._id === targetId) return parent;
+			const child = (parent.subcategories || []).find(sub => sub._id === targetId);
+			if (child) return parent;
+		}
+		return null;
+	};
+
+	const toggleExpandedCategory = (categoryId) => {
+		setExpandedCategories(prev =>
+			prev.includes(categoryId)
+				? prev.filter(id => id !== categoryId)
+				: [...prev, categoryId]
+		);
+	};
+
 	const handleCategoryToggle = (categoryId) => {
 		setSelectedCategories(prev => {
-			if (prev.includes(categoryId)) {
-				// Предотвратить удаление последней категории
-				if (prev.length === 1) {
-					Alert.alert('Ошибка', 'Требуется минимум одна категория');
-					return prev;
+			const parentCategory = findCategoryParent(categoryId);
+			let next = prev;
+
+			if (!parentCategory) {
+				if (prev.includes(categoryId)) {
+					if (prev.length === 1) {
+						Alert.alert('Ошибка', 'Требуется минимум одна категория');
+						return prev;
+					}
+					next = prev.filter(id => id !== categoryId);
+				} else {
+					next = [...prev, categoryId];
 				}
-				return prev.filter(id => id !== categoryId);
+				return next;
 			}
-			return [...prev, categoryId];
+
+			const isParent = parentCategory._id === categoryId;
+			if (isParent) {
+				next = toggleParentCategorySelection(parentCategory, prev);
+			} else {
+				next = toggleSubcategorySelection(parentCategory, prev, categoryId);
+			}
+
+			return next.length > 0 ? next : prev;
 		});
+
+		const parentCategory = findCategoryParent(categoryId);
+		if (parentCategory && parentCategory._id === categoryId) {
+			setExpandedCategories(prev =>
+				prev.includes(categoryId) ? prev : [...prev, categoryId]
+			);
+		}
 	};
 
 	const AuthFunc = () => {
@@ -237,44 +287,83 @@ export default function Reg({ navigation }) {
 			<Text style={styles.title}>Выберите город</Text>
 
 			<Text style={styles.label}>Город</Text>
-			<TextInput
-				style={styles.input}
-				placeholder="Поиск города..."
-				value={citySearch}
-				onChangeText={setCitySearch}
-			/>
-
-			<FlatList
-				data={filteredCities}
-				keyExtractor={item => item._id}
-				scrollEnabled={false}
-				renderItem={({ item }) => (
-					<TouchableOpacity
-						style={[
-							styles.cityItem,
-							city?._id === item._id && styles.cityItemSelected
-						]}
-						onPress={() => {
-							setCity(item);
-							setCitySearch('');
-						}}
-					>
-						<Text style={[
-							styles.cityItemText,
-							city?._id === item._id && styles.cityItemTextSelected
-						]}>
-							{item.name}
-						</Text>
-						<Text style={styles.regionText}>{item.region}</Text>
-					</TouchableOpacity>
+			<TouchableOpacity
+				style={styles.citySelector}
+				onPress={() => setCityModalVisible(true)}
+			>
+				<Text style={[styles.citySelectorText, city && styles.citySelectorTextSelected]}>
+					{city ? city.name : 'Нажмите, чтобы выбрать город'}
+				</Text>
+				{city ? (
+					<Text style={styles.citySelectorSubText}>{city.region || 'Казахстан'}</Text>
+				) : (
+					<Text style={styles.citySelectorSubText}>Поиск по городам и регионам</Text>
 				)}
-			/>
+			</TouchableOpacity>
 
 			{city && (
 				<View style={styles.selectedCity}>
 					<Text style={styles.selectedCityText}>✓ Выбран: {city.name}</Text>
 				</View>
 			)}
+
+			<Modal
+				visible={cityModalVisible}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setCityModalVisible(false)}
+			>
+				<View style={styles.modalOverlay}>
+					<View style={styles.modalCard}>
+						<View style={styles.modalHeader}>
+							<Text style={styles.modalTitle}>Выберите город</Text>
+							<TouchableOpacity onPress={() => setCityModalVisible(false)}>
+								<Text style={styles.closeButton}>✕</Text>
+							</TouchableOpacity>
+						</View>
+
+						<TextInput
+							style={styles.modalInput}
+							placeholder="Поиск города..."
+							placeholderTextColor="#999"
+							value={citySearch}
+							onChangeText={setCitySearch}
+							autoFocus
+						/>
+
+						<FlatList
+							data={filteredCities}
+							keyExtractor={item => item._id}
+							style={styles.modalList}
+							showsVerticalScrollIndicator={false}
+							renderItem={({ item }) => (
+								<TouchableOpacity
+									style={[
+										styles.cityItem,
+										city?._id === item._id && styles.cityItemSelected
+									]}
+									onPress={() => {
+										setCity(item);
+										setCitySearch('');
+										setCityModalVisible(false);
+									}}
+								>
+									<Text style={[
+										styles.cityItemText,
+										city?._id === item._id && styles.cityItemTextSelected
+									]}>{item.name}</Text>
+									<Text style={styles.regionText}>{item.region || 'Казахстан'}</Text>
+								</TouchableOpacity>
+							)}
+							ListEmptyComponent={
+								<View style={styles.emptyCitiesWrap}>
+									<Text style={styles.emptyCitiesText}>Города не найдены</Text>
+								</View>
+							}
+						/>
+					</View>
+				</View>
+			</Modal>
 		</View>
 	);
 
@@ -301,9 +390,15 @@ export default function Reg({ navigation }) {
 									<TouchableOpacity
 										style={[
 											styles.categoryItem,
-											selectedCategories.includes(item._id) && styles.categoryItemSelected
+											selectedCategories.includes(item._id) && styles.categoryItemSelected,
+											expandedCategories.includes(item._id) && styles.categoryItemExpanded,
 										]}
-										onPress={() => handleCategoryToggle(item._id)}
+										onPress={() => {
+											setExpandedCategories(prev =>
+												prev.includes(item._id) ? prev : [...prev, item._id]
+											);
+											handleCategoryToggle(item._id);
+										}}
 									>
 										<Text style={styles.categoryCheckbox}>
 											{selectedCategories.includes(item._id) ? '✓' : '○'}
@@ -314,10 +409,18 @@ export default function Reg({ navigation }) {
 										]}>
 											{item.icon} {item.name}
 										</Text>
+										<TouchableOpacity
+											onPress={() => toggleExpandedCategory(item._id)}
+											hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+										>
+											<Text style={styles.categoryChevron}>
+												{expandedCategories.includes(item._id) ? '▾' : '▸'}
+											</Text>
+										</TouchableOpacity>
 									</TouchableOpacity>
 
 									{/* Подкатегории */}
-									{item.subcategories && item.subcategories.map(sub => (
+									{item.subcategories && expandedCategories.includes(item._id) && item.subcategories.map(sub => (
 										<TouchableOpacity
 											key={sub._id}
 											style={[
@@ -570,6 +673,28 @@ const styles = StyleSheet.create({
 		paddingVertical: 12,
 		color: '#222'
 	},
+	citySelector: {
+		backgroundColor: '#F5F6FA',
+		borderRadius: 12,
+		paddingHorizontal: 14,
+		paddingVertical: 14,
+		borderWidth: 1,
+		borderColor: '#E0E0E0',
+		marginBottom: 12,
+	},
+	citySelectorText: {
+		fontSize: 16,
+		fontWeight: '600',
+		color: '#222',
+	},
+	citySelectorTextSelected: {
+		color: '#EC1B23',
+	},
+	citySelectorSubText: {
+		fontSize: 12,
+		color: '#7A7A7A',
+		marginTop: 4,
+	},
 	cityItem: {
 		padding: 12,
 		marginBottom: 8,
@@ -594,6 +719,60 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		color: '#999',
 		marginTop: 4
+	},
+	modalOverlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.35)',
+		justifyContent: 'center',
+		paddingHorizontal: 16,
+	},
+	modalCard: {
+		backgroundColor: '#fff',
+		borderRadius: 18,
+		maxHeight: '80%',
+		overflow: 'hidden',
+	},
+	modalHeader: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		paddingHorizontal: 16,
+		paddingVertical: 14,
+		borderBottomWidth: 1,
+		borderBottomColor: '#EAEAEA',
+	},
+	modalTitle: {
+		fontSize: 18,
+		fontWeight: '700',
+		color: '#222',
+	},
+	closeButton: {
+		fontSize: 22,
+		color: '#666',
+	},
+	modalInput: {
+		marginHorizontal: 16,
+		marginTop: 12,
+		marginBottom: 8,
+		backgroundColor: '#F5F6FA',
+		borderRadius: 10,
+		paddingHorizontal: 12,
+		paddingVertical: 12,
+		fontSize: 15,
+		color: '#222',
+	},
+	modalList: {
+		paddingHorizontal: 16,
+		paddingBottom: 12,
+		maxHeight: 420,
+	},
+	emptyCitiesWrap: {
+		paddingVertical: 26,
+		alignItems: 'center',
+	},
+	emptyCitiesText: {
+		fontSize: 14,
+		color: '#999',
 	},
 	selectedCity: {
 		backgroundColor: '#FFF5F5',
@@ -620,6 +799,15 @@ const styles = StyleSheet.create({
 	categoryItemSelected: {
 		backgroundColor: '#FFF5F5',
 		borderColor: '#EC1B23'
+	},
+	categoryItemExpanded: {
+		borderColor: '#EC1B23',
+		backgroundColor: '#FFF9F9',
+	},
+	categoryChevron: {
+		fontSize: 18,
+		color: '#666',
+		paddingLeft: 8,
 	},
 	categoryCheckbox: {
 		fontSize: 16,

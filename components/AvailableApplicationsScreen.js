@@ -10,15 +10,20 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  SafeAreaView,
+  RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../utils/apiClient';
-import SearchFilterBar from './SearchFilterBar';
 import { Toast } from '../utils/ToastManager';
 import { SkeletonCard } from './SkeletonLoader';
 
-const AvailableApplicationsScreen = ({ navigation }) => {
+const { width, height } = Dimensions.get('window');
+
+const AvailableApplicationsScreen = ({ navigation, route }) => {
+  const { categoryId, categoryName, searchQuery } = route.params || {};
   const [applications, setApplications] = useState([]);
   const [filteredApps, setFilteredApps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,34 +37,48 @@ const AvailableApplicationsScreen = ({ navigation }) => {
     description: '',
   });
   const [submitting, setSubmitting] = useState(false);
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useState(searchQuery || '');
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadData();
-    });
-    return unsubscribe;
-  }, [navigation]);
+    loadData();
+  }, [categoryId]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       
-      // Get current user
       const userStr = await AsyncStorage.getItem('@currentUser');
       if (userStr) {
         const user = JSON.parse(userStr);
         setCurrentUser(user);
 
-        // Load available applications for specialist's categories
         const response = await apiClient.get('/api/applications', {
           params: {
             status: 'open',
           },
         });
 
-        const list = response?.data?.data || response?.data || [];
+        let list = response?.data?.data || response?.data || [];
         if (Array.isArray(list)) {
+          // Filter by category if provided
+          if (categoryId) {
+            list = list.filter(app => {
+              if (!app.categories) return false;
+              return app.categories.some(cat => {
+                const catId = cat._id || cat.id || cat;
+                return String(catId) === String(categoryId);
+              });
+            });
+          }
+
+          // Filter by search query if provided
+          if (searchQuery) {
+            list = list.filter(app =>
+              (app.title && app.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+              (app.info && app.info.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+          }
+
           setApplications(list);
           setFilteredApps(list);
         } else {
@@ -79,7 +98,6 @@ const AvailableApplicationsScreen = ({ navigation }) => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
-    Toast.success('Обновлено');
   };
 
   const handleSearch = (text) => {
@@ -89,26 +107,29 @@ const AvailableApplicationsScreen = ({ navigation }) => {
     } else {
       const filtered = applications.filter(
         (app) =>
-          app.title.toLowerCase().includes(text.toLowerCase()) ||
-          app.info?.toLowerCase().includes(text.toLowerCase())
+          (app.title && app.title.toLowerCase().includes(text.toLowerCase())) ||
+          (app.info && app.info.toLowerCase().includes(text.toLowerCase()))
       );
       setFilteredApps(filtered);
     }
   };
 
+  const handleApplicationPress = (app) => {
+    navigation.navigate('ApplicationDetail', { applicationId: app._id });
+  };
+
   const handleResponsePress = (app) => {
-    setSelectedApp(app);
-    setResponseData({
-      offeredPrice: '',
-      estimatedDuration: '',
-      description: '',
-    });
-    setResponseModalVisible(true);
+    navigation.navigate('CreateResponse', { applicationId: app._id });
   };
 
   const handleSubmitResponse = async () => {
-    if (!responseData.offeredPrice.trim() || !currentUser) {
-      Alert.alert('Ошибка', 'Укажите предлагаемую цену');
+    if (!responseData.offeredPrice.trim()) {
+      Toast.warning('Укажите предлагаемую цену');
+      return;
+    }
+
+    if (isNaN(parseFloat(responseData.offeredPrice))) {
+      Toast.warning('Цена должна быть числом');
       return;
     }
 
@@ -122,10 +143,10 @@ const AvailableApplicationsScreen = ({ navigation }) => {
       });
 
       if (response.data && response.data.success) {
-        Alert.alert('Успех', 'Ваш отклик отправлен!');
+        Toast.success('Ваш отклик отправлен!');
         setResponseModalVisible(false);
         
-        // Remove from list or mark as responded
+        // Remove from list
         setApplications(
           applications.filter((app) => app._id !== selectedApp._id)
         );
@@ -145,121 +166,154 @@ const AvailableApplicationsScreen = ({ navigation }) => {
     }
   };
 
-  const renderApplicationItem = ({ item }) => (
-    <View style={styles.applicationCard}>
-      {/* Header */}
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.appTitle} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <Text style={styles.appCity}>
-            <Ionicons name="location" size={12} color="#999" /> {((item.city && typeof item.city === 'object') ? item.city.name : item.city) || 'Город не указан'}
-          </Text>
-        </View>
-        <View style={styles.budgetBox}>
-          <Text style={styles.budgetLabel}>Бюджет</Text>
-          <Text style={styles.budgetValue}>{item.summ} ₸</Text>
-        </View>
-      </View>
+  const getCityName = (city) => {
+    if (!city) return 'Не указан';
+    if (typeof city === 'string') return city;
+    if (typeof city === 'object') return city.name || 'Не указан';
+    return 'Не указан';
+  };
 
-      {/* Description */}
-      {item.info && (
-        <Text style={styles.appDescription} numberOfLines={3}>
-          {item.info}
-        </Text>
-      )}
+  const getCategoryNames = (categories) => {
+    if (!categories || categories.length === 0) return 'Нет категорий';
+    return categories
+      .map(cat => {
+        if (typeof cat === 'string') return cat;
+        if (typeof cat === 'object') return cat.name || cat._id;
+        return String(cat);
+      })
+      .join(', ');
+  };
 
-      {/* Categories */}
-          {item.categories && item.categories.length > 0 && (
-        <View style={styles.categoriesRow}>
-          {item.categories.slice(0, 3).map((cat) => (
-            <View key={cat} style={styles.categoryBadge}>
-              <Text style={styles.categoryBadgeText}>{cat}</Text>
-            </View>
-          ))}
-          {item.categories.length > 3 && (
-            <Text style={styles.moreCategoriesText}>
-              +{item.categories.length - 3}
+  const renderApplicationItem = ({ item }) => {
+    const cityName = getCityName(item.city);
+    const categoryNames = getCategoryNames(item.categories);
+
+    return (
+      <TouchableOpacity
+        style={styles.applicationCard}
+        onPress={() => handleApplicationPress(item)}
+        activeOpacity={0.7}
+      >
+        {/* Title and Price */}
+        <View style={styles.cardHeader}>
+          <View style={styles.titleSection}>
+            <Text style={styles.appTitle} numberOfLines={2}>
+              {item.title}
             </Text>
-          )}
+          </View>
+          <Text style={styles.price}>{item.summ || '?'} ₸</Text>
         </View>
-      )}
 
-      {/* Date and responses count */}
-      <View style={styles.cardFooter}>
-        <Text style={styles.dateText}>
-          {new Date(item.createdAt).toLocaleDateString('ru-RU', {
-            month: 'short',
-            day: 'numeric',
-          })}
-        </Text>
-        {item.responseCount && (
-          <Text style={styles.responsesCount}>
-            {item.responseCount} откликов
+        {/* Description */}
+        {item.info && (
+          <Text style={styles.description} numberOfLines={2}>
+            {item.info}
           </Text>
         )}
-      </View>
 
-      {/* Action Button */}
-      <TouchableOpacity
-        style={styles.respondButton}
-        onPress={() => handleResponsePress(item)}
-      >
-        <Ionicons name="send" size={14} color="#fff" />
-        <Text style={styles.respondButtonText}>Отправить отклик</Text>
+        {/* City and Categories */}
+        <View style={styles.infoRowsContainer}>
+          <View style={styles.infoRow}>
+            <Ionicons name="location-outline" size={14} color="#EC1B23" />
+            <Text style={styles.infoText}>{cityName}</Text>
+          </View>
+          <View style={styles.categoriesRow}>
+            <Ionicons name="pricetag-outline" size={14} color="#666" />
+            <Text style={styles.infoText} numberOfLines={1}>
+              {categoryNames}
+            </Text>
+          </View>
+        </View>
+
+        {/* Deadline if exists */}
+        {item.deadline && (
+          <View style={styles.deadlineRow}>
+            <Ionicons name="calendar-outline" size={14} color="#999" />
+            <Text style={styles.infoText}>
+              До {new Date(item.deadline).toLocaleDateString('ru-RU')}
+            </Text>
+          </View>
+        )}
+
+        {/* Action Button */}
+        <TouchableOpacity
+          style={styles.respondButton}
+          onPress={() => handleResponsePress(item)}
+        >
+          <Ionicons name="send" size={16} color="#fff" />
+          <Text style={styles.respondButtonText}>Отправить отклик</Text>
+        </TouchableOpacity>
       </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
-  const renderEmptyList = () => (
+  const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="inbox-outline" size={64} color="#DDD" />
-      <Text style={styles.emptyTitle}>Нет доступных заказов</Text>
-      <Text style={styles.emptyText}>
-        Когда появятся новые заказы в ваших категориях, они будут показаны здесь
+      <Ionicons name="document-outline" size={64} color="#ddd" style={{ marginBottom: 16 }} />
+      <Text style={styles.emptyTitle}>Заказы не найдены</Text>
+      <Text style={styles.emptySub}>
+        {categoryName
+          ? `В категории "${categoryName}" пока нет заказов`
+          : 'Попробуйте изменить фильтр или вернитесь позже'}
       </Text>
     </View>
   );
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <SearchFilterBar placeholder="Поиск заказа..." showFilters={false} onSearch={handleSearch} />
-        <View style={styles.centerContent}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="chevron-back" size={28} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>
+            {categoryName ? `${categoryName}` : 'Лента заказов'}
+          </Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.centerLoading}>
           {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Search Bar */}
-      <SearchFilterBar
-        placeholder="Поиск заказа..."
-        onSearch={handleSearch}
-        showFilters={false}
-      />
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Доступные заказы</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="chevron-back" size={28} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {categoryName ? `${categoryName}` : 'Лента заказов'}
+        </Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={18} color="#999" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Поиск заказа..."
-          placeholderTextColor="#999"
-          value={searchText}
-          onChangeText={handleSearch}
-        />
-        {searchText ? (
-          <TouchableOpacity onPress={() => handleSearch('')}>
-            <Ionicons name="close-circle" size={18} color="#999" />
-          </TouchableOpacity>
-        ) : null}
+      {/* Search Bar */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchContainer}>
+          <Ionicons size={18} color="#999" name="search-outline" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Поиск заказов..."
+            placeholderTextColor="#999"
+            value={searchText}
+            onChangeText={handleSearch}
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity onPress={() => handleSearch('')}>
+              <Ionicons size={18} color="#999" name="close-circle" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Applications List */}
@@ -268,9 +322,15 @@ const AvailableApplicationsScreen = ({ navigation }) => {
         renderItem={renderApplicationItem}
         keyExtractor={(item) => item._id}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={renderEmptyList}
-        onRefresh={onRefresh}
-        refreshing={refreshing}
+        ListEmptyComponent={renderEmpty}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#EC1B23"
+          />
+        }
+        showsVerticalScrollIndicator={false}
       />
 
       {/* Response Modal */}
@@ -280,156 +340,161 @@ const AvailableApplicationsScreen = ({ navigation }) => {
         animationType="slide"
         onRequestClose={() => setResponseModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SafeAreaView style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {/* Header */}
+            {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setResponseModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#000" />
-              </TouchableOpacity>
               <Text style={styles.modalTitle}>Отправить отклик</Text>
-              <View style={{ width: 24 }} />
+              <TouchableOpacity
+                onPress={() => setResponseModalVisible(false)}
+              >
+                <Ionicons name="close" size={28} color="#000" />
+              </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Application Info */}
-              {selectedApp && (
-                <View style={styles.appInfoBox}>
-                  <Text style={styles.appInfoTitle}>{selectedApp.title}</Text>
-                  <Text style={styles.appInfoDetail}>
-                    Бюджет: {selectedApp.summ} ₸
-                  </Text>
-                  {selectedApp.city && (
-                    <Text style={styles.appInfoDetail}>
-                      Город: {((selectedApp.city && typeof selectedApp.city === 'object') ? selectedApp.city.name : selectedApp.city) || 'Город не указан'}
-                    </Text>
-                  )}
-                </View>
-              )}
+            {/* Selected Application Info */}
+            {selectedApp && (
+              <View style={styles.selectedAppInfo}>
+                <Text style={styles.selectedAppTitle} numberOfLines={2}>
+                  {selectedApp.title}
+                </Text>
+                <Text style={styles.selectedAppPrice}>
+                  Бюджет: {selectedApp.summ} ₸
+                </Text>
+              </View>
+            )}
 
-              {/* Price Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Предлагаемая цена (₸) *</Text>
+            {/* Form */}
+            <ScrollView style={styles.formContainer} keyboardShouldPersistTaps="handled">
+              <Text style={styles.formLabel}>Ваша предложенная цена *</Text>
+              <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Введите сумму"
+                  placeholder="Введите цену в тенге"
                   placeholderTextColor="#999"
-                  value={responseData.offeredPrice}
-                  onChangeText={(text) =>
-                    setResponseData({ ...responseData, offeredPrice: text })
-                  }
                   keyboardType="decimal-pad"
-                  editable={!submitting}
+                  value={responseData.offeredPrice}
+                  onChangeText={(price) =>
+                    setResponseData({ ...responseData, offeredPrice: price })
+                  }
                 />
+                <Text style={styles.inputSuffix}>₸</Text>
               </View>
 
-              {/* Duration Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Примерные сроки (дни)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Например: 5-7 дней"
-                  placeholderTextColor="#999"
-                  value={responseData.estimatedDuration}
-                  onChangeText={(text) =>
-                    setResponseData({ ...responseData, estimatedDuration: text })
-                  }
-                  editable={!submitting}
-                />
-              </View>
+              <Text style={styles.formLabel}>Примерный срок выполнения</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Например: 3 дня, 1 неделя"
+                placeholderTextColor="#999"
+                value={responseData.estimatedDuration}
+                onChangeText={(duration) =>
+                  setResponseData({ ...responseData, estimatedDuration: duration })
+                }
+              />
 
-              {/* Description Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Комментарий</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder="Расскажите о вашем опыте и подходе к работе"
-                  placeholderTextColor="#999"
-                  value={responseData.description}
-                  onChangeText={(text) =>
-                    setResponseData({ ...responseData, description: text })
-                  }
-                  multiline
-                  numberOfLines={4}
-                  editable={!submitting}
-                />
-              </View>
+              <Text style={styles.formLabel}>Ваше предложение (опционально)</Text>
+              <TextInput
+                style={[styles.input, styles.multilineInput]}
+                placeholder="Расскажите почему вы подходите для этого заказа..."
+                placeholderTextColor="#999"
+                value={responseData.description}
+                onChangeText={(desc) =>
+                  setResponseData({ ...responseData, description: desc })
+                }
+                multiline
+                numberOfLines={5}
+              />
             </ScrollView>
 
-            {/* Footer Buttons */}
-            <View style={styles.modalFooter}>
+            {/* Buttons */}
+            <View style={styles.modalButtonsContainer}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setResponseModalVisible(false)}
-                disabled={submitting}
               >
                 <Text style={styles.cancelButtonText}>Отмена</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={styles.submitButton}
+                style={[styles.modalButton, styles.submitButton]}
                 onPress={handleSubmitResponse}
-                disabled={submitting || !responseData.offeredPrice.trim()}
+                disabled={submitting}
               >
                 {submitting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.submitButtonText}>Отправить</Text>
+                  <>
+                    <Ionicons name="send" size={18} color="#fff" />
+                    <Text style={styles.submitButtonText}>Отправить</Text>
+                  </>
                 )}
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F2',
+    backgroundColor: '#F8F8F8',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    paddingHorizontal: 16,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#EFEFEF',
   },
+  backButton: {
+    padding: 8,
+  },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#000',
-  },
-  centerContent: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    textAlign: 'center',
+  },
+  searchSection: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    marginBottom: 8,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 12,
-    marginVertical: 8,
+    backgroundColor: '#F2F2F2',
+    borderRadius: 10,
     paddingHorizontal: 12,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#EFEFEF',
+    paddingVertical: 8,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    fontSize: 13,
+    marginLeft: 8,
+    marginRight: 8,
+    fontSize: 14,
+    color: '#000',
   },
   listContent: {
+    paddingHorizontal: 8,
     paddingVertical: 8,
+  },
+  centerLoading: {
+    flex: 1,
+    justifyContent: 'center',
     paddingHorizontal: 12,
   },
   applicationCard: {
     backgroundColor: '#fff',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
@@ -438,182 +503,170 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  titleSection: {
+    flex: 1,
+    marginRight: 12,
   },
   appTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
-    lineHeight: 18,
-    marginBottom: 4,
-  },
-  appCity: {
-    fontSize: 12,
-    color: '#999',
-  },
-  budgetBox: {
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  budgetLabel: {
-    fontSize: 10,
-    color: '#999',
-  },
-  budgetValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#EC1B23',
-    marginTop: 2,
+    color: '#000',
+    lineHeight: 20,
   },
-  appDescription: {
-    fontSize: 12,
+  price: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#EC1B23',
+  },
+  description: {
+    fontSize: 13,
     color: '#666',
-    lineHeight: 16,
-    marginBottom: 10,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  infoRowsContainer: {
+    marginBottom: 8,
+    gap: 6,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   categoriesRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 10,
-  },
-  categoryBadge: {
-    backgroundColor: '#F0F0F0',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 6,
-    marginBottom: 4,
-  },
-  categoryBadgeText: {
-    fontSize: 11,
-    color: '#666',
-  },
-  moreCategoriesText: {
-    fontSize: 11,
-    color: '#999',
-    alignSelf: 'center',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    gap: 6,
+  },
+  deadlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginBottom: 8,
   },
-  dateText: {
-    fontSize: 11,
-    color: '#999',
-  },
-  responsesCount: {
-    fontSize: 11,
+  infoText: {
+    fontSize: 12,
     color: '#666',
+    flex: 1,
   },
   respondButton: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'center',
     backgroundColor: '#EC1B23',
-    borderRadius: 6,
+    borderRadius: 8,
+    paddingVertical: 10,
+    gap: 6,
   },
   respondButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
     color: '#fff',
-    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '700',
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingHorizontal: 20,
+    minHeight: height * 0.5,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
     marginBottom: 8,
+    textAlign: 'center',
   },
-  emptyText: {
-    fontSize: 13,
+  emptySub: {
+    fontSize: 14,
     color: '#999',
     textAlign: 'center',
-    paddingHorizontal: 24,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
   },
   modalContent: {
+    flex: 1,
     backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginTop: 'auto',
     maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
     paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#EFEFEF',
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#000',
   },
-  modalBody: {
+  selectedAppInfo: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F8F8F8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEFEF',
+  },
+  selectedAppTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 4,
+  },
+  selectedAppPrice: {
+    fontSize: 13,
+    color: '#EC1B23',
+    fontWeight: '600',
+  },
+  formContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  appInfoBox: {
-    backgroundColor: '#F8F8F8',
+  formLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F2',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-  },
-  appInfoTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 6,
-  },
-  appInfoDetail: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 6,
+    marginBottom: 12,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#EFEFEF',
-    borderRadius: 6,
-    paddingHorizontal: 12,
+    flex: 1,
     paddingVertical: 10,
-    fontSize: 13,
-    backgroundColor: '#F8F8F8',
+    fontSize: 14,
+    color: '#000',
   },
-  textArea: {
+  inputSuffix: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EC1B23',
+    marginLeft: 4,
+  },
+  multilineInput: {
+    minHeight: 80,
     textAlignVertical: 'top',
-    paddingVertical: 10,
+    paddingTop: 10,
   },
-  modalFooter: {
+  modalButtonsContainer: {
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 16,
@@ -621,30 +674,30 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#EFEFEF',
   },
-  cancelButton: {
+  modalButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#DDD',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  cancelButton: {
+    backgroundColor: '#F2F2F2',
   },
   cancelButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#666',
-    textAlign: 'center',
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '700',
   },
   submitButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 6,
     backgroundColor: '#EC1B23',
   },
   submitButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
     color: '#fff',
-    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

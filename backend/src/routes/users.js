@@ -48,8 +48,20 @@ router.post('/me/portfolio', auth, upload.array('files', 12), userController.upl
 router.delete('/me/portfolio', auth, userController.deletePortfolioItem);
 router.post('/me/verify', auth, upload.array('docs', 6), userController.submitVerification);
 router.post('/me/switch-mode', auth, userController.switchMode);
-router.get('/:id', userController.getUserById);
+
+// Review routes
+router.post('/reviews/create', auth, userController.createReview);
+router.get('/:userId/reviews', userController.getReviewsByUser);
+router.get('/reviews/application/:applicationId', userController.getReviewsByApplication);
+router.get('/:userId/rating-stats', userController.getUserRatingStats);
+
+// Geolocation routes
+router.post('/location/update', auth, userController.updateLocation);
+router.get('/location/nearby', userController.getNearbySpecialists);
+router.get('/location/distance/:specialistId', userController.getDistanceToSpecialist);
+
 router.get('/stats/:userId', userController.getSpecialistStats);
+router.get('/:id', userController.getUserById);
 
 // Public users listing with optional filters
 router.get('/', userController.getAll);

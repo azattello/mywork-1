@@ -1,8 +1,22 @@
 const Application = require('../models/Application');
+const Conversation = require('../models/Conversation');
+const messageController = require('./messageController');
+
+const normalizeApplicationStatus = (value) => {
+  if (!value) return 'open';
+  const legacyMap = {
+    new: 'open',
+    agreed: 'in_progress',
+    completed: 'closed',
+    cancelled: 'closed',
+  };
+  return legacyMap[value] || value;
+};
 
 exports.updateStatus = async (req, res) => {
   const { id } = req.params;
   const { status, reason } = req.body;
+  const normalizedStatus = normalizeApplicationStatus(status);
 
   const application = await Application.findById(id);
   if (!application) {
@@ -20,32 +34,48 @@ exports.updateStatus = async (req, res) => {
 
   // Валидация перехода статусов
   const validTransitions = {
-    new: ['in_progress', 'cancelled'],
-    in_progress: ['agreed', 'cancelled'],
-    agreed: ['completed', 'cancelled'],
-    completed: [], // Финальный статус
-    cancelled: [], // Финальный статус
+    open: ['in_progress', 'closed'],
+    in_progress: ['closed'],
+    closed: [],
   };
 
-  if (!validTransitions[application.status].includes(status)) {
+  const currentStatus = normalizeApplicationStatus(application.status);
+  if (!validTransitions[currentStatus]?.includes(normalizedStatus)) {
     return res.status(400).json({ 
       success: false, 
       message: 'Недопустимый переход статуса' 
     });
   }
 
+  const oldStatus = currentStatus;
+
   // Обновление статуса
-  application.status = status;
-  if (status === 'cancelled') {
-    application.cancelReason = reason;
-    application.cancelledAt = new Date();
-    application.active = false;
-  } else if (status === 'completed') {
-    application.completedAt = new Date();
+  application.status = normalizedStatus;
+  if (normalizedStatus === 'closed') {
+    application.cancelReason = reason || application.cancelReason;
+    application.cancelledAt = application.cancelledAt || new Date();
     application.active = false;
   }
 
   await application.save();
+
+  // Отправляем системное сообщение в чат заказа
+  if (application.currentSpecialist) {
+    const conversation = await Conversation.findOne({
+      application: application._id
+    });
+
+    if (conversation) {
+      const eventType = status === 'completed' ? 'work_completed' : 'status_changed';
+      await messageController.createSystemMessage(
+        conversation._id,
+        req.user._id,
+        application.currentSpecialist,
+        eventType,
+        { oldStatus, newStatus: status }
+      );
+    }
+  }
 
   // Возвращаем обновленную заявку со связанными данными
   await application.populate([

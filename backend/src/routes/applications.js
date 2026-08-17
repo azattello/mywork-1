@@ -10,13 +10,13 @@ const auth = require('../middlewares/auth');
 const { createApplicationSchema } = require('../validation/application');
 const upload = require('../middlewares/upload');
 
-// РЎРѕР·РґР°РЅРёРµ Рё РїРѕР»СѓС‡РµРЅРёРµ Р·Р°СЏРІРѕРє
+// Создание и получение заявок
 router.post('/', auth, validate(createApplicationSchema), applicationController.create);
 router.get('/', applicationController.getAll);
-// Get single application by id
-router.get('/:id', applicationController.getById);
 router.get('/user/:userId', applicationController.getByUser);
 router.get('/specialist/:specialistId', applicationController.getBySpecialist);
+// Get single application by id
+router.get('/:id', applicationController.getById);
 
 // РЈРїСЂР°РІР»РµРЅРёРµ РѕС‚РєР»РёРєР°РјРё
 router.get('/:applicationId/responses', auth, responseController.getApplicationResponses);
@@ -43,6 +43,10 @@ router.get('/:id/reviews', auth, reviewController.getApplicationReviews);
 // Chat routes
 router.get('/:id/chat', auth, applicationChatController.getApplicationChat);
 router.post('/:id/chat', auth, applicationChatController.sendApplicationMessage);
+
+// Photo uploads
+router.post('/:id/photos', auth, upload.array('photos', 10), applicationController.uploadPhotos);
+router.delete('/:id/photos/:photoUrl', auth, applicationController.deletePhoto);
 
 module.exports = router;
 

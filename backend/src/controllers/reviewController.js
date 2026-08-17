@@ -10,8 +10,8 @@ exports.createReview = async (req, res) => {
     return res.status(404).json({ success: false, message: 'Заявка не найдена' });
   }
 
-  // Проверяем, что заявка завершена
-  if (application.status !== 'completed') {
+  // Проверяем, что заявка завершена и принята клиентом/исполнителем
+  if (application.status !== 'closed' && application.status !== 'completed') {
     return res.status(400).json({ 
       success: false, 
       message: 'Отзыв можно оставить только после завершения заказа' 

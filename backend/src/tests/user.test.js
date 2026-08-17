@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { app } = require('../index');
 const setup = require('./setup');
 const User = require('../models/User');
+const Application = require('../models/Application');
 
 beforeAll(async () => {
   await setup.connect();
@@ -146,6 +147,30 @@ test('PUT /api/users/me updates isAvailable flag', async () => {
   expect(u.isAvailable).toBe(false);
 });
 
+test('PUT /api/users/me accepts specialist profile fields', async () => {
+  const user = new User({ phone: '557', passwordHash: 'x', name: 'Spec', role: 'specialist' });
+  await user.save();
+  const token = makeToken(user);
+
+  const res = await request(app)
+    .put('/api/users/me')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      minPrice: 5000,
+      maxPrice: 20000,
+      yearsOfExperience: 3,
+      workMode: 'online',
+      about: 'I edit profiles and fix app bugs.'
+    })
+    .expect(200);
+
+  expect(res.body.success).toBe(true);
+  expect(res.body.data.minPrice).toBe(5000);
+  expect(res.body.data.maxPrice).toBe(20000);
+  expect(res.body.data.yearsOfExperience).toBe(3);
+  expect(res.body.data.workMode).toBe('online');
+});
+
 test('PUT /api/users/me rejects invalid payloads (wrong type)', async () => {
   const user = new User({ phone: '556', passwordHash: 'x', name: 'Bad' });
   await user.save();
@@ -158,4 +183,48 @@ test('PUT /api/users/me rejects invalid payloads (wrong type)', async () => {
     .expect(400);
 
   expect(res.body.success).toBe(false);
+});
+
+test('GET /api/applications does not expose private specialist proposals in public feed', async () => {
+  const client = new User({ phone: '777', passwordHash: 'x', name: 'Client', role: 'user' });
+  await client.save();
+
+  const specialist = new User({ phone: '778', passwordHash: 'x', name: 'Spec', role: 'specialist' });
+  await specialist.save();
+
+  const publicApp = new Application({
+    title: 'Public order',
+    info: 'Visible to all specialists',
+    user: client._id,
+    active: true,
+    status: 'open',
+    currentSpecialist: null,
+  });
+  await publicApp.save();
+
+  const privateApp = new Application({
+    title: 'Private offer',
+    info: 'Only for selected specialist',
+    user: client._id,
+    active: true,
+    status: 'open',
+    currentSpecialist: specialist._id,
+    proposalStatus: 'active',
+  });
+  await privateApp.save();
+
+  const res = await request(app)
+    .get('/api/applications')
+    .expect(200);
+
+  const titles = (res.body.data || []).map(item => item.title);
+  expect(titles).toContain('Public order');
+  expect(titles).not.toContain('Private offer');
+
+  const specialistList = await request(app)
+    .get(`/api/applications/specialist/${specialist._id}`)
+    .expect(200);
+
+  const specialistTitles = (specialistList.body.data || []).map(item => item.title);
+  expect(specialistTitles).toContain('Private offer');
 });

@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -35,91 +36,101 @@ const CreateProposalModal = ({ visible, onClose, onSubmit, specialistName, isLoa
     <Modal
       visible={visible}
       animationType="slide"
-      transparent={false}
+      transparent
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
+        style={styles.overlay}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} disabled={isLoading}>
-            <Ionicons name="chevron-back" size={28} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Создать предложение</Text>
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={isLoading || !title.trim() || !description.trim()}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#EC1B23" />
-            ) : (
-              <Ionicons name="checkmark" size={28} color="#EC1B23" />
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Content */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Specialist Name */}
-          <View style={styles.section}>
-            <Text style={styles.label}>Специалист</Text>
-            <View style={styles.specialistBox}>
-              <Ionicons name="person-circle" size={40} color="#999" />
-              <Text style={styles.specialistName}>{specialistName || 'Неизвестно'}</Text>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.container}>
+            <View style={styles.header}>
+              <TouchableOpacity onPress={onClose} disabled={isLoading}>
+                <Ionicons name="chevron-back" size={28} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Создать предложение</Text>
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={isLoading || !title.trim() || !description.trim()}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#EC1B23" />
+                ) : (
+                  <Ionicons name="checkmark" size={28} color="#EC1B23" />
+                )}
+              </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Title */}
-          <View style={styles.section}>
-            <Text style={styles.label}>Заголовок предложения</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Заголовок"
-              value={title}
-              onChangeText={setTitle}
-              maxLength={70}
-              editable={!isLoading}
-            />
-            <Text style={styles.counter}>{title.length}/70</Text>
-          </View>
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              <View style={styles.section}>
+                <Text style={styles.label}>Специалист</Text>
+                <View style={styles.specialistBox}>
+                  <Ionicons name="person-circle" size={40} color="#999" />
+                  <Text style={styles.specialistName}>{specialistName || 'Неизвестно'}</Text>
+                </View>
+              </View>
 
-          {/* Description */}
-          <View style={styles.section}>
-            <Text style={styles.label}>Описание предложения</Text>
-            <TextInput
-              style={[styles.input, styles.textarea]}
-              placeholder="Подробно опишите, что вам нужно..."
-              value={description}
-              onChangeText={setDescription}
-              maxLength={1000}
-              multiline
-              numberOfLines={6}
-              editable={!isLoading}
-              textAlignVertical="top"
-            />
-            <Text style={styles.counter}>{description.length}/1000</Text>
-          </View>
+              <View style={styles.section}>
+                <Text style={styles.label}>Заголовок предложения</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Заголовок"
+                  value={title}
+                  onChangeText={setTitle}
+                  maxLength={70}
+                  editable={!isLoading}
+                />
+                <Text style={styles.counter}>{title.length}/70</Text>
+              </View>
 
-          {/* Info */}
-          <View style={styles.infoBox}>
-            <Ionicons name="information-circle-outline" size={20} color="#2196F3" />
-            <Text style={styles.infoText}>
-              Специалист получит уведомление о вашем предложении. Вы сможете обсудить детали в чате.
-            </Text>
+              <View style={styles.section}>
+                <Text style={styles.label}>Описание предложения</Text>
+                <TextInput
+                  style={[styles.input, styles.textarea]}
+                  placeholder="Подробно опишите, что вам нужно..."
+                  value={description}
+                  onChangeText={setDescription}
+                  maxLength={1000}
+                  multiline
+                  numberOfLines={6}
+                  editable={!isLoading}
+                  textAlignVertical="top"
+                />
+                <Text style={styles.counter}>{description.length}/1000</Text>
+              </View>
+
+              <View style={styles.infoBox}>
+                <Ionicons name="information-circle-outline" size={20} color="#2196F3" />
+                <Text style={styles.infoText}>
+                  Специалист получит уведомление о вашем предложении. Вы сможете обсудить детали в чате.
+                </Text>
+              </View>
+            </ScrollView>
           </View>
-        </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  overlay: {
     flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  safeArea: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingTop: 24,
+  },
+  container: {
+    flex: 0.92,
     backgroundColor: '#F5F5F5',
-    paddingTop: 10,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',

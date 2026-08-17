@@ -13,12 +13,27 @@ const applicationSchema = new mongoose.Schema(
       default: "fixed",
     },
     // Категории
-    categories: [{ type: String }],
+    categories: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Category'
+    }],
     // Описание
     info: { type: String },
     description: { type: String },
+    
+    // Фото заказа (можно загрузить несколько фото для примера)
+    photos: [
+      {
+        url: String,
+        uploadedAt: { type: Date, default: Date.now }
+      }
+    ],
+    
     // Место работы
-    city: { type: String },
+    city: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'City'
+    },
     workMode: {
       type: String,
       enum: ["online", "offline"],

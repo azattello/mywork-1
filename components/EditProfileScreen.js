@@ -11,9 +11,15 @@ export default function EditProfileScreen({ navigation, route }) {
   const [editForm, setEditForm] = useState({
     name: '',
     surname: '',
+    phone: '',
     about: '',
     cityId: '',
-    cityName: ''
+    cityName: '',
+    // Для специалистов:
+    minPrice: '',
+    maxPrice: '',
+    yearsOfExperience: '',
+    workMode: 'online' // online, offline, both
   });
 
   useEffect(() => {
@@ -68,9 +74,14 @@ export default function EditProfileScreen({ navigation, route }) {
         setEditForm({
           name: userData.name || '',
           surname: userData.surname || '',
+          phone: userData.phone || '',
           about: userData.about || '',
           cityId: userData.city?._id || '',
-          cityName: userData.city?.name || ''
+          cityName: userData.city?.name || '',
+          minPrice: String(userData.minPrice || ''),
+          maxPrice: String(userData.maxPrice || ''),
+          yearsOfExperience: String(userData.yearsOfExperience || ''),
+          workMode: userData.workMode || 'online'
         });
       }
     } catch (err) {
@@ -92,9 +103,19 @@ export default function EditProfileScreen({ navigation, route }) {
         surname: editForm.surname,
         about: editForm.about,
       };
-      // Отправляем city как есть, даже если она не изменилась
+      if (editForm.phone) {
+        payload.phone = editForm.phone;
+      }
       if (editForm.cityId) {
         payload.city = editForm.cityId;
+      }
+      
+      // Для специалистов добавляем дополнительные поля
+      if (user.role === 'specialist') {
+        if (editForm.minPrice) payload.minPrice = parseInt(editForm.minPrice);
+        if (editForm.maxPrice) payload.maxPrice = parseInt(editForm.maxPrice);
+        if (editForm.yearsOfExperience) payload.yearsOfExperience = parseInt(editForm.yearsOfExperience);
+        if (editForm.workMode) payload.workMode = editForm.workMode;
       }
 
       console.log('Saving payload:', payload);
@@ -107,9 +128,14 @@ export default function EditProfileScreen({ navigation, route }) {
         setEditForm({
           name: updatedData.name || '',
           surname: updatedData.surname || '',
+          phone: updatedData.phone || '',
           about: updatedData.about || '',
           cityId: updatedData.city?._id || '',
-          cityName: updatedData.city?.name || ''
+          cityName: updatedData.city?.name || '',
+          minPrice: String(updatedData.minPrice || ''),
+          maxPrice: String(updatedData.maxPrice || ''),
+          yearsOfExperience: String(updatedData.yearsOfExperience || ''),
+          workMode: updatedData.workMode || 'online'
         });
         await AsyncStorage.setItem('@currentUser', JSON.stringify(updatedData));
         navigation.goBack();
@@ -161,6 +187,19 @@ export default function EditProfileScreen({ navigation, route }) {
         </View>
 
         <View style={s.inputGroup}>
+          <Text style={s.inputLabel}>Номер телефона</Text>
+          <TextInput
+            style={s.input}
+            placeholder="+7 (XXX) XXX-XX-XX"
+            keyboardType="phone-pad"
+            value={editForm.phone}
+            onChangeText={(t) => setEditForm({ ...editForm, phone: t })}
+            editable={false}
+          />
+          <Text style={s.helperText}>Номер телефона нельзя изменить</Text>
+        </View>
+
+        <View style={s.inputGroup}>
           <Text style={s.inputLabel}>Город</Text>
           <TouchableOpacity
             style={s.pickerButton}
@@ -184,6 +223,75 @@ export default function EditProfileScreen({ navigation, route }) {
             numberOfLines={5}
           />
         </View>
+
+        {user.role === 'specialist' && (
+          <>
+            <View style={s.divider} />
+            <Text style={s.sectionTitle}>🔧 Параметры специалиста</Text>
+
+            <View style={s.inputGroup}>
+              <Text style={s.inputLabel}>Минимальная цена (₸)</Text>
+              <TextInput
+                style={s.input}
+                placeholder="От 5000"
+                keyboardType="numeric"
+                value={editForm.minPrice}
+                onChangeText={(t) => setEditForm({ ...editForm, minPrice: t })}
+              />
+            </View>
+
+            <View style={s.inputGroup}>
+              <Text style={s.inputLabel}>Максимальная цена (₸)</Text>
+              <TextInput
+                style={s.input}
+                placeholder="До 100000"
+                keyboardType="numeric"
+                value={editForm.maxPrice}
+                onChangeText={(t) => setEditForm({ ...editForm, maxPrice: t })}
+              />
+            </View>
+
+            <View style={s.inputGroup}>
+              <Text style={s.inputLabel}>Лет опыта</Text>
+              <TextInput
+                style={s.input}
+                placeholder="2"
+                keyboardType="numeric"
+                value={editForm.yearsOfExperience}
+                onChangeText={(t) => setEditForm({ ...editForm, yearsOfExperience: t })}
+              />
+            </View>
+
+            <View style={s.inputGroup}>
+              <Text style={s.inputLabel}>Режим работы</Text>
+              <View style={s.workModeContainer}>
+                {['online', 'offline', 'both'].map(mode => (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[
+                      s.workModeButton,
+                      editForm.workMode === mode && s.workModeButtonActive
+                    ]}
+                    onPress={() => setEditForm({ ...editForm, workMode: mode })}
+                  >
+                    <Text style={[
+                      s.workModeButtonText,
+                      editForm.workMode === mode && s.workModeButtonTextActive
+                    ]}>
+                      {mode === 'online' ? '💻' : mode === 'offline' ? '📍' : '🔄'}
+                    </Text>
+                    <Text style={[
+                      s.workModeButtonLabel,
+                      editForm.workMode === mode && s.workModeButtonLabelActive
+                    ]}>
+                      {mode === 'online' ? 'Онлайн' : mode === 'offline' ? 'Офлайн' : 'Оба'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </>
+        )}
       </ScrollView>
 
       <View style={s.footer}>
@@ -222,6 +330,7 @@ const s = StyleSheet.create({
   body: { flex: 1, padding: 16 },
   inputGroup: { marginBottom: 16 },
   inputLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#333' },
+  helperText: { fontSize: 12, color: '#999', marginTop: 4 },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -262,4 +371,47 @@ const s = StyleSheet.create({
   cancelButton: { backgroundColor: '#f0f0f0' },
   saveButton: { backgroundColor: '#EC1B23' },
   buttonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  divider: { 
+    height: 1, 
+    backgroundColor: '#ddd', 
+    marginVertical: 16 
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 16,
+  },
+  workModeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  workModeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  workModeButtonActive: {
+    borderColor: '#EC1B23',
+    backgroundColor: '#FFE8E8',
+  },
+  workModeButtonText: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  workModeButtonLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  workModeButtonLabelActive: {
+    color: '#EC1B23',
+    fontWeight: '700',
+  },
 });

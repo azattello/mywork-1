@@ -6,16 +6,18 @@ const createApplicationSchema = Joi.object({
   budgetType: Joi.string().valid('fixed','range').optional(),
   budgetMin: Joi.number().min(0).optional(),
   budgetMax: Joi.number().min(0).optional(),
-  info: Joi.string().min(10).allow('', null).optional(),  // Optional, but if provided must be at least 10 chars
+  info: Joi.string().min(10).allow('', null).optional(),
   city: Joi.string().allow('', null).optional(),
   categories: Joi.array().items(Joi.string()).optional(),
   workMode: Joi.string().valid('online','offline').optional(),
   address: Joi.string().allow('', null).optional(),
   deadline: Joi.date().optional(),
-  status: Joi.string().valid('open', 'in_progress', 'closed').optional(),
+  status: Joi.string().valid('open', 'in_progress', 'closed', 'new', 'agreed', 'completed', 'cancelled').optional(),
   currentSpecialist: Joi.string().allow('', null).optional(),
+  proposalStatus: Joi.string().valid('active', 'closed').optional(),
+  mode: Joi.string().valid('proposal', 'order').optional(),
   active: Joi.boolean().optional(),
-  userID: Joi.string().optional(),  // Optional - can come from auth middleware, but accepts from body as fallback
+  userID: Joi.string().optional(),
 });
 
 const responseSchema = Joi.object({

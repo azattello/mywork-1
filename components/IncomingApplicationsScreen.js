@@ -73,23 +73,55 @@ const IncomingApplicationsScreen = ({ navigation }) => {
     }
   };
 
-  const handleAccept = async (applicationId) => {
+  const getMyResponseForApplication = (app) => {
+    if (!app || !currentUser) return null;
+
+    const userId = currentUser._id || currentUser.id;
+    const responses = Array.isArray(app.responses) ? app.responses : [];
+
+    return responses.find((r) => {
+      const specialistId = r?.specialist?._id || r?.specialist || r?.specialistId;
+      return String(specialistId) === String(userId);
+    }) || null;
+  };
+
+  const handleAccept = async (application) => {
     try {
-      const response = await apiClient.put(`/api/applications/${applicationId}/status`, {
-        status: 'agreed',
-      });
-      if (response.data && response.data.success) {
-        Toast.success('Вы приняли предложение');
+      const myResponse = getMyResponseForApplication(application);
+
+      if (!myResponse) {
+        Toast.warning('Не найден отклик для подтверждения');
+        return;
+      }
+
+      const res = await apiClient.post(`/api/applications/${application._id}/responses/${myResponse._id}/confirm`);
+      if (res?.data?.success) {
+        Toast.success('Предложение подтверждено');
         await loadApplications();
       }
     } catch (error) {
       console.error('Error accepting application:', error);
-      Toast.error('Не удалось принять предложение');
+      Toast.error(error?.response?.data?.message || 'Не удалось принять предложение');
     }
   };
 
-  const handleReject = async (applicationId) => {
-    Toast.warning('Отклонение предложения - скоро');
+  const handleReject = async (application) => {
+    try {
+      const myResponse = getMyResponseForApplication(application);
+      if (!myResponse) {
+        Toast.warning('Не найден отклик для отклонения');
+        return;
+      }
+
+      const res = await apiClient.post(`/api/applications/${application._id}/responses/${myResponse._id}/decline`);
+      if (res?.data?.success) {
+        Toast.success('Предложение отклонено');
+        await loadApplications();
+      }
+    } catch (error) {
+      console.error('Error rejecting application:', error);
+      Toast.error(error?.response?.data?.message || 'Не удалось отклонить предложение');
+    }
   };
 
   const handleOpenChat = (application) => {
@@ -98,7 +130,18 @@ const IncomingApplicationsScreen = ({ navigation }) => {
       otherUserId: application.user._id,
       otherUserName: `${application.user.surname} ${application.user.name}`,
       applicationId: application._id,
+      applicationTitle: application?.title || 'Заявка',
     });
+  };
+
+  const normalizeStatus = (status) => {
+    const legacyMap = {
+      new: 'open',
+      agreed: 'in_progress',
+      completed: 'closed',
+      cancelled: 'closed',
+    };
+    return legacyMap[status] || status || 'open';
   };
 
   const getModeLabel = (mode) => {
@@ -107,104 +150,105 @@ const IncomingApplicationsScreen = ({ navigation }) => {
 
   const getStatusColor = (status) => {
     const colors = {
-      new: '#FF9800',
+      open: '#FF9800',
       in_progress: '#2196F3',
-      agreed: '#4CAF50',
-      completed: '#4CAF50',
-      cancelled: '#F44336',
+      closed: '#4CAF50',
     };
-    return colors[status] || '#999';
+    return colors[normalizeStatus(status)] || '#999';
   };
 
   const getStatusLabel = (status) => {
     const labels = {
-      new: 'Новая',
+      open: 'Открыта',
       in_progress: 'В работе',
-      agreed: 'Согласовано',
-      completed: 'Завершено',
-      cancelled: 'Отменено',
+      closed: 'Завершено',
     };
-    return labels[status] || status;
+    return labels[normalizeStatus(status)] || normalizeStatus(status);
   };
 
-  const renderApplicationItem = ({ item }) => (
-    <View style={styles.applicationCard}>
-      {/* Customer info */}
-      <View style={styles.customerSection}>
-        {item.user.avatar ? (
-          <Image source={{ uri: item.user.avatar }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Ionicons name="person" size={24} color="#999" />
-          </View>
-        )}
-        <View style={styles.customerInfo}>
-          <Text style={styles.customerName}>
-            {item.user.surname} {item.user.name}
-          </Text>
-          {item.user.city && (
-            <Text style={styles.customerCity}>📍 {typeof item.user.city === 'string' ? item.user.city : item.user.city.name}</Text>
+  const renderApplicationItem = ({ item }) => {
+    const isPendingConfirmation = Boolean(item.pendingSpecialistConfirmation && String(item.proposedSpecialist || item.proposedSpecialist?._id) === String(currentUser?._id || currentUser?.id));
+    const canConfirm = isPendingConfirmation || normalizeStatus(item.status) === 'open';
+
+    return (
+      <View style={styles.applicationCard}>
+        {/* Customer info */}
+        <View style={styles.customerSection}>
+          {item.user.avatar ? (
+            <Image source={{ uri: item.user.avatar }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Ionicons name="person" size={24} color="#999" />
+            </View>
           )}
-        </View>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) },
-          ]}
-        >
-          <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
-        </View>
-      </View>
-
-      {/* Title and mode */}
-      <View style={styles.titleSection}>
-        <Text style={styles.title} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.mode}>{getModeLabel(item.mode)}</Text>
-      </View>
-
-      {/* Description */}
-      {item.info && (
-        <Text style={styles.description} numberOfLines={2}>
-          {item.info}
-        </Text>
-      )}
-
-      {/* Date */}
-      <Text style={styles.date}>
-        {new Date(item.createdAt).toLocaleDateString('ru-RU')}
-      </Text>
-
-      {/* Actions */}
-      {item.status === 'new' ? (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.button, styles.rejectButton]}
-            onPress={() => handleReject(item._id)}
+          <View style={styles.customerInfo}>
+            <Text style={styles.customerName}>
+              {item.user.surname} {item.user.name}
+            </Text>
+            {item.user.city && (
+              <Text style={styles.customerCity}>📍 {typeof item.user.city === 'string' ? item.user.city : item.user.city.name}</Text>
+            )}
+          </View>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(item.status) },
+            ]}
           >
-            <Ionicons name="close" size={18} color="#999" />
-            <Text style={styles.rejectButtonText}>Отклонить</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.button, styles.acceptButton]}
-            onPress={() => handleAccept(item._id)}
-          >
-            <Ionicons name="checkmark" size={18} color="#fff" />
-            <Text style={styles.acceptButtonText}>Принять</Text>
-          </TouchableOpacity>
+            <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
+          </View>
         </View>
-      ) : (
-        <TouchableOpacity
-          style={[styles.button, styles.chatButton]}
-          onPress={() => handleOpenChat(item)}
-        >
-          <Ionicons name="chatbubble-outline" size={18} color="#EC1B23" />
-          <Text style={styles.chatButtonText}>Открыть чат</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
+
+        {/* Title and mode */}
+        <View style={styles.titleSection}>
+          <Text style={styles.title} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text style={styles.mode}>{getModeLabel(item.mode)}</Text>
+        </View>
+
+        {/* Description */}
+        {item.info && (
+          <Text style={styles.description} numberOfLines={2}>
+            {item.info}
+          </Text>
+        )}
+
+        {/* Date */}
+        <Text style={styles.date}>
+          {new Date(item.createdAt).toLocaleDateString('ru-RU')}
+        </Text>
+
+        {/* Actions */}
+        {canConfirm ? (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.button, styles.rejectButton]}
+              onPress={() => handleReject(item)}
+            >
+              <Ionicons name="close" size={18} color="#999" />
+              <Text style={styles.rejectButtonText}>Отклонить</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.acceptButton]}
+              onPress={() => handleAccept(item)}
+            >
+              <Ionicons name="checkmark" size={18} color="#fff" />
+              <Text style={styles.acceptButtonText}>Принять</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.button, styles.chatButton]}
+            onPress={() => handleOpenChat(item)}
+          >
+            <Ionicons name="chatbubble-outline" size={18} color="#EC1B23" />
+            <Text style={styles.chatButtonText}>Открыть чат</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
 
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>

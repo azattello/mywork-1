@@ -7,14 +7,21 @@ const Message = require('../models/Message');
 // Create or get conversation between participants
 router.post('/', auth, async (req, res) => {
   const { participants, applicationId } = req.body; // array of user ids and optional applicationId
-  if (!participants || !Array.isArray(participants) || participants.length < 2) return res.status(400).json({ success: false, message: 'Participants array required' });
+  if (!participants || !Array.isArray(participants) || participants.length < 2) {
+    return res.status(400).json({ success: false, message: 'Participants array required' });
+  }
+
+  const normalizedParticipants = [...new Set(participants.filter(Boolean))];
+  if (normalizedParticipants.length < 2) {
+    return res.status(400).json({ success: false, message: 'Participants must contain 2 valid user ids' });
+  }
 
   // Try to find existing conversation with same participants
-  const conv = await Conversation.findOne({ participants: { $size: participants.length, $all: participants } });
+  const conv = await Conversation.findOne({ participants: { $size: normalizedParticipants.length, $all: normalizedParticipants } });
   if (conv) return res.json({ success: true, data: conv });
 
   const newConv = new Conversation({ 
-    participants,
+    participants: normalizedParticipants,
     application: applicationId || undefined,
     type: applicationId ? 'application' : 'direct'
   });
@@ -27,10 +34,12 @@ router.get('/', auth, async (req, res) => {
   const userId = req.user._id;
   const convs = await Conversation.find({ 
     participants: userId,
-    isDeleted: { $ne: true } // Не показываем удаленные диалоги
-  }).sort({ updatedAt: -1 });
-  
-  // Calculate unreadCount for each conversation
+    isDeleted: { $ne: true }
+  })
+    .populate('participants', 'name surname avatarUrl role')
+    .populate('application', 'title _id')
+    .sort({ updatedAt: -1 });
+
   const convsWithUnread = await Promise.all(
     convs.map(async (conv) => {
       const unreadCount = await Message.countDocuments({
@@ -38,14 +47,17 @@ router.get('/', auth, async (req, res) => {
         to: userId,
         isRead: false
       });
-      
+
       return {
         ...conv.toObject(),
-        unreadCount
+        applicationId: conv.application?._id || conv.application || null,
+        applicationTitle: conv.application?.title || 'Заявка',
+        unreadCount,
+        participants: Array.isArray(conv.participants) ? conv.participants : []
       };
     })
   );
-  
+
   res.json({ success: true, data: convsWithUnread });
 });
 

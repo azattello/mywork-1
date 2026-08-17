@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../utils/apiClient';
 import { Toast } from '../utils/ToastManager';
+import { getAvatarUri } from '../utils/imageUri';
 
 const ResponsesViewScreen = ({ route, navigation }) => {
   const { applicationId, applicationTitle } = route.params;
@@ -113,9 +114,9 @@ const ResponsesViewScreen = ({ route, navigation }) => {
         >
           {/* Avatar */}
           <View style={styles.avatarContainer}>
-            {item.specialist.avatar ? (
+            {getAvatarUri(item.specialist) ? (
               <Image
-                source={{ uri: item.specialist.avatar }}
+                source={{ uri: getAvatarUri(item.specialist) }}
                 style={styles.avatar}
               />
             ) : (

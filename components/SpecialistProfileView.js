@@ -11,11 +11,14 @@ import {
   FlatList,
   SafeAreaView,
 } from 'react-native';
-import { CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../utils/apiClient';
+import { API_URL } from '../config';
 import CreateProposalModal from './CreateProposalModal';
+import FavoriteButton from './FavoriteButton';
+import { getImageUri, getAvatarUri } from '../utils/imageUri';
+import { resetToAuth } from '../navigate';
 
 const SpecialistProfileView = ({ route, navigation }) => {
   const { userId, userName } = route.params;
@@ -43,8 +46,12 @@ const SpecialistProfileView = ({ route, navigation }) => {
       const response = await apiClient.get(`/api/users/${userId}`);
       const u = response?.data?.data || response?.data || null;
       if (u) {
+        const reviewCount = Number(u.reviewsCount ?? u.reviewCount ?? 0);
         const normalizedUser = {
           ...u,
+          rating: Number(u.rating || 0),
+          reviewsCount: reviewCount,
+          reviewCount,
           city: u.city && (u.city.name || u.city),
           categories: (u.categories || []).map((c) => {
             if (!c) return null;
@@ -122,7 +129,7 @@ const SpecialistProfileView = ({ route, navigation }) => {
         const targetId = user?._id || userId;
         const found = apps.find((a) => {
           const cs = a.currentSpecialist || a.currentSpecialist?._id;
-          return a.mode === 'proposal' && a.proposalStatus === 'active' && (String(cs) === String(targetId) || String(a.currentSpecialist) === String(targetId));
+          return a.proposalStatus === 'active' && (String(cs) === String(targetId) || String(a.currentSpecialist) === String(targetId));
         });
         if (found) {
           setHasActiveProposal(true);
@@ -147,7 +154,7 @@ const SpecialistProfileView = ({ route, navigation }) => {
       
       if (!accessToken || !currentUserStr) {
         Alert.alert('Требуется авторизация', 'Пожалуйста, войдите в аккаунт, чтобы отправить предложение');
-        navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Auth' }] }));
+        resetToAuth();
         return;
       }
       
@@ -158,8 +165,7 @@ const SpecialistProfileView = ({ route, navigation }) => {
         info: description,
         currentSpecialist: user?._id || userId,
         userID: currentUser._id || currentUser.id,
-        mode: 'proposal',
-        status: 'new',
+        status: 'open',
       };
 
       const res = await apiClient.post('/api/applications', payload);
@@ -179,7 +185,7 @@ const SpecialistProfileView = ({ route, navigation }) => {
       const serverMessage = err?.response?.data?.message;
       if (status === 401) {
         Alert.alert('Требуется авторизация', 'Токен истёк. Пожалуйста, войдите ещё раз.');
-        navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Auth' }] }));
+        resetToAuth();
       } else if (serverMessage) {
         Alert.alert('Ошибка', serverMessage);
       } else {
@@ -208,22 +214,29 @@ const SpecialistProfileView = ({ route, navigation }) => {
     return stars;
   };
 
-  const renderReviewItem = ({ item }) => (
-    <View style={styles.reviewCard}>
-      <View style={styles.reviewHeader}>
-        <Text style={styles.reviewAuthor}>{item.author?.name || 'Аноним'}</Text>
-        <View style={styles.starsRow}>{renderStars(item.rating)}</View>
+  const renderReviewItem = ({ item }) => {
+    const reviewImage = getImageUri(item?.image || item?.imageUrl || item?.photo);
+
+    return (
+      <View style={styles.reviewCard}>
+        <View style={styles.reviewHeader}>
+          <Text style={styles.reviewAuthor}>{item.author?.name || 'Аноним'}</Text>
+          <View style={styles.starsRow}>{renderStars(item.rating)}</View>
+        </View>
+        {item.text && <Text style={styles.reviewText}>{item.text}</Text>}
+        {reviewImage && (
+          <Image source={{ uri: reviewImage }} style={styles.reviewImage} resizeMode="cover" />
+        )}
+        <Text style={styles.reviewDate}>
+          {new Date(item.createdAt).toLocaleDateString('ru-RU', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })}
+        </Text>
       </View>
-      {item.text && <Text style={styles.reviewText}>{item.text}</Text>}
-      <Text style={styles.reviewDate}>
-        {new Date(item.createdAt).toLocaleDateString('ru-RU', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })}
-      </Text>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -267,19 +280,27 @@ const SpecialistProfileView = ({ route, navigation }) => {
           <Ionicons name="chevron-back" size={28} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Профиль специалиста</Text>
-        <View style={{ width: 28 }} />
+        {user && (
+          <FavoriteButton
+            specialistId={user._id}
+            size={24}
+          />
+        )}
       </View>
 
       <ScrollView style={[styles.content, { paddingBottom: 120 }]} showsVerticalScrollIndicator={false}>
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-          {user.avatar ? (
-            <Image source={{ uri: user.avatar }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Ionicons name="person" size={48} color="#999" />
-            </View>
-          )}
+          {(() => {
+            const avatarUri = getImageUri(user.avatarUrl || user.avatar);
+            return avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={48} color="#999" />
+              </View>
+            );
+          })()}
           <Text style={styles.userName}>{user.name}</Text>
           <Text style={styles.onlineStatus}>{getOnlineStatus(user.lastSeen)}</Text>
           <Text style={styles.userCity}>{user.city || 'Город не указан'}</Text>
@@ -288,7 +309,7 @@ const SpecialistProfileView = ({ route, navigation }) => {
           <View style={styles.ratingBox}>
             <View style={styles.starsRow}>{renderStars(user.rating)}</View>
             <Text style={styles.ratingValue}>
-              {user.rating ? user.rating.toFixed(1) : '0'} ({user.reviewCount || 0} отзывов)
+              {user.rating ? user.rating.toFixed(1) : '0'} ({user.reviewCount ?? user.reviewsCount ?? 0} отзывов)
             </Text>
           </View>
         </View>
@@ -321,17 +342,20 @@ const SpecialistProfileView = ({ route, navigation }) => {
             <Text style={styles.sectionTitle}>Портфолио</Text>
             <FlatList
               data={user.portfolio}
-              renderItem={({ item }) => (
-                <View style={styles.portfolioItem}>
-                  {item.url && item.url.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                    <Image source={{ uri: item.url }} style={styles.portfolioImage} />
-                  ) : (
-                    <View style={styles.portfolioPlaceholder}>
-                      <Ionicons name="document" size={32} color="#999" />
-                    </View>
-                  )}
-                </View>
-              )}
+              renderItem={({ item }) => {
+                const portfolioUri = getImageUri(item?.url || item);
+                return (
+                  <View style={styles.portfolioItem}>
+                    {portfolioUri && portfolioUri.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                      <Image source={{ uri: portfolioUri }} style={styles.portfolioImage} />
+                    ) : (
+                      <View style={styles.portfolioPlaceholder}>
+                        <Ionicons name="document" size={32} color="#999" />
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
               keyExtractor={(item, idx) => idx.toString()}
               horizontal
               scrollEnabled={true}

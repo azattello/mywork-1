@@ -1,600 +1,420 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
-import { View, Image, StyleSheet, Text, SafeAreaView, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  Text,
+  SafeAreaView,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  FlatList,
+  Dimensions,
+  Alert,
+} from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import apiClient from '../utils/apiClient';
+import { Toast } from '../utils/ToastManager';
 
+const { width } = Dimensions.get('window');
 
+export default function HomePro({ navigation }) {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchText, setSearchText] = useState('');
 
-export default function HomePro({navigation}) {
+  useEffect(() => {
+    loadCategories();
+  }, []);
 
-  const AddRef = ()=>{
-    // navigation.navigate('Feed');
+  const loadCategories = async () => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get('/api/categories');
+      const list = res?.data?.data || [];
+      setCategories(list);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      Toast.error('Не удалось загрузить категории');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewIncoming = () => {
+    navigation.navigate('TabPro', { screen: 'Входящие' });
+  };
+
+  const handleViewChats = () => {
+    navigation.navigate('TabPro', { screen: 'Чаты' });
+  };
+
+  const handleViewFeed = () => {
     navigation.navigate('TabPro', { screen: 'Лента' });
-    
-  }
+  };
 
-  const supportRef = ()=>{
-    navigation.navigate('Служба поддержки');
-  }
+  const handleCategoryPress = (category) => {
+    navigation.navigate('AvailableApplicationsScreen', {
+      categoryId: category._id,
+      categoryName: category.name,
+    });
+  };
 
-  const PostOpen = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Заявка');
-  }
-  const Offer = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Предложение');
-  }
-  const Message = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Сообщение');
-  }
+  const handleViewAllCategories = () => {
+    navigation.navigate('CategoriesList');
+  };
 
-  const Profile = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Профиль');
-  }
-  const rating = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Отзыв');
-  }
-  const viewUser = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Исполнитель');
-  }
-  const ChatItem = ()=>{
-    // navigation.navigate('Служба поддержки');
-    navigation.navigate('Чат');
-  }
-  const filterRef = ()=>{
-    navigation.navigate('Фильтр');
-  }
-  const AvailableApps = ()=>{
-    navigation.navigate('AvailableApplications');
-  }
+  const handleSearch = () => {
+    if (!searchText.trim()) {
+      Toast.warning('Введите текст для поиска');
+      return;
+    }
+    // TODO: Implement search by title/description
+    navigation.navigate('AvailableApplicationsScreen', { 
+      searchQuery: searchText
+    });
+  };
+
+  const renderCategoryCard = ({ item }) => (
+    <TouchableOpacity
+      style={styles.categoryCard}
+      onPress={() => handleCategoryPress(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.categoryIconContainer}>
+        <Ionicons name="briefcase-outline" size={36} color="#EC1B23" />
+      </View>
+      <Text style={styles.categoryName} numberOfLines={2}>
+        {item.name || 'Категория'}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const displayedCategories = categories.slice(0, 6); // Show first 6
+
   return (
     <SafeAreaView style={styles.wrapper}>
-      <StatusBar
-        backgroundColor="#fff"
-      />
-      <ScrollView>
+      <StatusBar backgroundColor="#fff" barStyle="dark-content" />
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.greetings}>MyWork</Text>
+          <Text style={styles.subtitle}>Найди свой следующий заказ</Text>
+        </View>
 
-            <View style={styles.header}>
+        {/* Search Bar */}
+        <View style={styles.searchSection}>
+          <View style={styles.searchContainer}>
+            <Ionicons size={20} color="#999" name="search-outline" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Поиск заказов по названию..."
+              placeholderTextColor="#999"
+              value={searchText}
+              onChangeText={setSearchText}
+              onSubmitEditing={handleSearch}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchText('')}>
+                <Ionicons size={20} color="#999" name="close-circle" />
+              </TouchableOpacity>
+            )}
+          </View>
+          {searchText.length > 0 && (
+            <TouchableOpacity 
+              style={styles.searchButton}
+              onPress={handleSearch}
+            >
+              <Ionicons name="search" size={18} color="#fff" />
+              <Text style={styles.searchButtonText}>Поиск</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-            
+        {/* Quick Actions - только Входящие и Чаты (убрали Лента и "Доступные заказы") */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionPrimary]}
+            onPress={handleViewIncoming}
+          >
+            <Ionicons size={24} color="#fff" name="inbox-outline" />
+            <Text style={styles.actionButtonText}>Входящие</Text>
+          </TouchableOpacity>
 
-              <Text style={styles.title}>Чем вы занимаетесь?</Text>
-              <View style={styles.inputContainer}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionSecondary]}
+            onPress={handleViewChats}
+          >
+            <Ionicons size={24} color="#EC1B23" name="chatbubbles-outline" />
+            <Text style={styles.actionButtonTextSecond}>Чаты</Text>
+          </TouchableOpacity>
 
-                <Ionicons size={25} color={'#ABABAB'} name="search-outline"></Ionicons>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionTertiary]}
+            onPress={handleViewFeed}
+          >
+            <Ionicons size={24} color="#EC1B23" name="flash-outline" />
+            <Text style={styles.actionButtonTextSecond}>Лента</Text>
+          </TouchableOpacity>
+        </View>
 
-                  <TextInput
-                  style={styles.input}
-                  placeholder="Специалист или Услуга"
-                  keyboardType="default"
-                  autoCapitalize="none"
-                  />
-              </View>
+        {/* Categories Section */}
+        <View style={styles.categoriesSection}>
+          <View style={styles.categoriesHeader}>
+            <Text style={styles.categoriesTitle}>Категории</Text>
+            {categories.length > 6 && (
+              <TouchableOpacity onPress={handleViewAllCategories}>
+                <Text style={styles.viewAllText}>Все →</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
+          {loading ? (
+            <ActivityIndicator size="large" color="#EC1B23" style={{ marginVertical: 20 }} />
+          ) : categories.length > 0 ? (
+            <FlatList
+              data={displayedCategories}
+              renderItem={renderCategoryCard}
+              keyExtractor={(item) => item._id}
+              numColumns={3}
+              scrollEnabled={false}
+              columnWrapperStyle={styles.categoryRow}
+              contentContainerStyle={styles.categoriesGrid}
+            />
+          ) : (
+            <Text style={styles.noCategoriesText}>Категории не найдены</Text>
+          )}
+        </View>
+
+        {/* Info Section */}
+        <View style={styles.infoSection}>
+          <View style={styles.infoCard}>
+            <View style={styles.infoIconBox}>
+              <Ionicons name="star" size={28} color="#FFC107" />
             </View>
+            <Text style={styles.infoTitle}>Новые заказы</Text>
+            <Text style={styles.infoText}>
+              Получай самые свежие заказы, соответствующие твоим навыкам
+            </Text>
+          </View>
 
-                <View style={styles.container}>
+          <View style={styles.infoCard}>
+            <View style={styles.infoIconBox}>
+              <Ionicons name="shield-checkmark" size={28} color="#4CAF50" />
+            </View>
+            <Text style={styles.infoTitle}>Безопасность</Text>
+            <Text style={styles.infoText}>
+              Защищённые платежи и проверенные заказчики в MyWork
+            </Text>
+          </View>
+        </View>
 
-                  <TouchableOpacity style={styles.touchButton} onPress={AddRef}>
-                    <Ionicons size={30} color={'#fff'} name="flash-outline"></Ionicons>
-                    <Text style={styles.buttonText}>Лента заявок</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.touchButton} onPress={AvailableApps}>
-                    <Ionicons size={30} color={'#fff'} name="layers-outline"></Ionicons>
-                    <Text style={styles.buttonText}>Доступные заказы</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.line}>
-                  <View style={styles.h1Container}>
-                    <Text style={styles.h1}>Популярные услуги</Text>
-                    <TouchableOpacity>
-                      <Text style={styles.h2}>Все услуги</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
-                    <TouchableOpacity style={styles.card1}>
-                      <Image style={styles.cardImg} source={require('../assets/service1.jpg')}/>
-                      <Text style={styles.cardText}>Курьерские услуги</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service2.jpg')}/>
-                      <Text style={styles.cardText}>Репетиторство</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service3.jpg')}/>
-                      <Text style={styles.cardText}>Монтаж окон и дверей</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service4.jpg')}/>
-                      <Text style={styles.cardText}>Клининг</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service5.jpeg')}/>
-                      <Text style={styles.cardText}>Услуги няни</Text>
-                    </TouchableOpacity>
-
-                  </ScrollView>
-                </View>
-
-                <View style={styles.line}>
-                  <View style={styles.h1Container}>
-                    <Text style={styles.h1}>Дистанционные услуги</Text>
-                    <TouchableOpacity>
-                      <Text style={styles.h2}>Все услуги</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
-                    <TouchableOpacity style={styles.card1}>
-                      <Image style={styles.cardImg} source={require('../assets/service6.jpg')}/>
-                      <Text style={styles.cardText}>Видеомонтаж</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service7.jpg')}/>
-                      <Text style={styles.cardText}>Создание дизайна</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service8.jpg')}/>
-                      <Text style={styles.cardText}>Таргетированная реклама</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service9.jpg')}/>
-                      <Text style={styles.cardText}>Услуги программистов</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service10.jpg')}/>
-                      <Text style={styles.cardText}>Услуги маркетолога</Text>
-                    </TouchableOpacity>
-
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/service11.jpg')}/>
-                      <Text style={styles.cardText}>Работа с текстом</Text>
-                    </TouchableOpacity>
-
-                  </ScrollView>
-                </View>
-
-                <View style={styles.line2}>
-                  <View style={styles.h1Container}>
-                    <Text style={styles.h1}>Топ специалистов</Text>
-                    <TouchableOpacity>
-                      <Text style={styles.h2}>Все специалисты</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
-                    <TouchableOpacity style={styles.card1}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.card}>
-                      <Image style={styles.cardImg} source={require('../assets/santex.jpg')}/>
-                      <Text style={styles.cardText}>Сантехника</Text>
-                    </TouchableOpacity>
-
-                  </ScrollView>
-                </View>
-
-                <View style={styles.gidContainer}>
-                  <Text style={styles.h1}>Yoyo гид</Text>
-                  <TouchableOpacity style={styles.collaps1}>
-                    <Text style={styles.collapsText}>
-                      Yoyo.kz платный?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                      Как выбрать специалиста?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                      Как оставить заявку?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                    Как узнать опыт специалиста?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                      Как оставить заявку?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                      Как обработать отклики?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                      Как изменить номера телефона?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.collaps}>
-                    <Text style={styles.collapsText}>
-                      Как восстановить пароль?
-                    </Text>
-                    <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
-                    
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.h2Container}>
-                    <Text style={styles.collapsH2}>
-                        Посмотреть все
-                    </Text>
-                  </TouchableOpacity>
-                  
-
-
-
-                </View>
-                
-
-
-                <View style={styles.footer}> 
-                  <TouchableOpacity style={styles.supportContainer} onPress={supportRef}>
-                      <Text style={styles.supportH2}>
-                          Служба поддержки
-                      </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.supportContainer} onPress={PostOpen}>
-                      <Text style={styles.supportH2}>
-                          Заявки
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={Offer}>
-                      <Text style={styles.supportH2}>
-                      Предложение
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={Message}>
-                      <Text style={styles.supportH2}>
-                      Сообщение
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={Profile}>
-                      <Text style={styles.supportH2}>
-                      Профиль
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={rating}>
-                      <Text style={styles.supportH2}>
-                      Отзыв
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={viewUser}>
-                      <Text style={styles.supportH2}>
-                      Просмотр профиля
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={ChatItem}>
-                      <Text style={styles.supportH2}>
-                      Чат
-                      </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.supportContainer} onPress={filterRef}>
-                      <Text style={styles.supportH2}>
-                      Фильтр
-                      </Text>
-                  </TouchableOpacity>
-                </View>
-            
-            
+        {/* Footer Space */}
+        <View style={styles.footerSpace} />
       </ScrollView>
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  wrapper:{
-    display: 'flex',
+  wrapper: {
     flex: 1,
-    flexDirection: 'column',
-    backgroundColor: '#F2F2F2'
-
+    backgroundColor: '#F8F8F8',
   },
   header: {
-    // paddingTop: 100, 
-    paddingBottom: 20, 
-    paddingHorizontal: 20, 
+    paddingHorizontal: 16,
+    paddingVertical: 20,
     backgroundColor: '#fff',
-    paddingBottom: 30,
-    
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEFEF',
   },
- 
-  title:{
-    marginTop: 50, 
-    fontSize: 22,
-    textAlign: 'center',
+  greetings: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#EC1B23',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
     fontWeight: '500',
   },
-
-  inputContainer:{
-    height: 50,
-    marginTop: 35, 
-    width: '100%',
-    backgroundColor: '#EBEBEB',
-    paddingHorizontal: 15,
-    borderRadius: 10,
+  searchSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    marginBottom: 8,
+  },
+  searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-
-   
+    backgroundColor: '#F2F2F2',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  input: {
-    // backgroundColor: '#000',
-    height: '100%',
-    width: 260,
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    marginRight: 8,
     fontSize: 14,
-    marginLeft: 10,
-
+    color: '#000',
   },
-
-  container: {
-    display: 'flex',
-    flex:1,
-    alignItems: 'center',
-    // backgroundColor: '#fff',
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-
-
-  },
-  touchButton: {
-    marginTop: 30,
-    width: '100%',
-    backgroundColor: '#B23439',
-    borderRadius: 14,
+  searchButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 30,
-
-    shadowColor: "#999696",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 10,
+    backgroundColor: '#EC1B23',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    gap: 6,
   },
-  buttonText: {
+  searchButtonText: {
     color: '#fff',
-    fontSize: 16,
-    marginLeft: 5,
-    fontWeight: '500',
-
+    fontSize: 12,
+    fontWeight: '600',
   },
-  line: {
-    marginTop: 40,
-    
-  },
-  h1Container:{
-    display: 'flex',
-    flexDirection: "row",
-    alignItems: 'center',
-    justifyContent: 'space-between',
-
-  },
-  h1: {
-    fontSize: 14,
-    marginLeft: 30,
-  },
-  h2: {
-    marginRight: 30,
-    color: '#808080',
-
-  },
-  card1: {
-    marginRight: 20,
-    marginTop: 10,
-    marginLeft: 20,
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    padding: 5,
-    paddingBottom: 20,
-    borderRadius:16,
-
-    shadowColor: "#999696",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 10,
-
-
-  },
-  card: {
-    marginRight: 20,
-    marginTop: 10,
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    padding: 5,
-    paddingBottom: 20,
-    borderRadius:16,
-
-    shadowColor: "#999696",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 10,
-
-
-  },
-  cardImg: {
-    width: 200,
-    height: 130,
-    borderRadius: 5,
-    borderTopLeftRadius: 13,
-    borderTopRightRadius: 13,
-  },
-  cardText: {
-    marginTop: 15,
-    paddingLeft: 10,
-    fontSize: 14,
-    // fontWeight: '500',
-    textAlign: 'left',
-  },
-
-  line2: {
-    marginTop: 60,
-
-  },
-  gidContainer:{
-    marginTop: 40,
-    paddingHorizontal: 20,
-
-  },
-  collaps1:{
+  quickActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     backgroundColor: '#fff',
+    gap: 8,
+    marginBottom: 8,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionPrimary: {
+    backgroundColor: '#EC1B23',
+  },
+  actionSecondary: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#EC1B23',
+  },
+  actionTertiary: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#EC1B23',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  actionButtonTextSecond: {
+    color: '#EC1B23',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  categoriesSection: {
+    backgroundColor: '#fff',
+    marginVertical: 8,
+    paddingVertical: 16,
+  },
+  categoriesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  categoriesTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000',
+  },
+  viewAllText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#EC1B23',
+  },
+  categoriesGrid: {
+    paddingHorizontal: 8,
+  },
+  categoryRow: {
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  categoryCard: {
+    width: (width - 56) / 3,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingVertical: 12,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+  },
+  categoryIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: '#EC1B23',
+  },
+  categoryName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
+  noCategoriesText: {
+    textAlign: 'center',
+    color: '#999',
+    fontSize: 14,
     paddingVertical: 20,
-    paddingHorizontal: 40,
-    borderRadius: 10,
-
-
-    shadowColor: "#999696",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 10,
-
   },
-
-  collaps:{
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    backgroundColor: '#fff',
+  infoSection: {
+    paddingHorizontal: 16,
     paddingVertical: 20,
-    paddingHorizontal: 40,
-    borderRadius: 10,
-
-    shadowColor: "#999696",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 10,
-
+    gap: 12,
   },
-
-  collapsText:{
+  infoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+  },
+  infoIconBox: {
+    marginBottom: 12,
+  },
+  infoTitle: {
     fontSize: 14,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  collapsIcon:{
-    marginLeft: 10,
-
+  infoText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 18,
   },
-  h2Container:{
-    width: '100%',
-    marginTop: 25,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingRight: 15,
-
+  footerSpace: {
+    height: 60,
   },
-  collapsH2:{
-    color: '#757575',
-
-
-  },
-  footer:{
-    width: '100%',
-    paddingHorizontal: 20,    
-    marginBottom: 60,
-    marginTop: 20,
-  },
-  supportContainer:{
-    marginTop: 15,
-		width: '100%',
-		height: 60,
-		borderWidth: 1,
-		borderRadius: 14,
-		borderColor: '#EC1B23',
-		alignItems: 'center',
-		justifyContent: 'center',
-    
-  },
-  supportH2: {
-    color:'#EC1B23',
-  },
-
-
- 
 });

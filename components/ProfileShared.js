@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../utils/apiClient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { resetToAuth } from '../navigate';
 
 export default function ProfileShared({ navigation, role: roleProp }) {
   const [loading, setLoading] = useState(true);
@@ -148,21 +149,17 @@ export default function ProfileShared({ navigation, role: roleProp }) {
 
   const openManageCategories = () => navigation.navigate('Управление категориями');
 
+  const openSettings = () => navigation.navigate('Settings');
+
   const handleLogout = async () => {
     try {
-      // Remove all auth-related data from AsyncStorage
       await AsyncStorage.removeItem('@accessToken');
       await AsyncStorage.removeItem('@refreshToken');
       await AsyncStorage.removeItem('@currentUser');
       await AsyncStorage.removeItem('@currentRole');
-      
-      // Reset navigation to Auth screen using CommonActions
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: 'Auth' }],
-        })
-      );
+      await AsyncStorage.removeItem('@userData');
+
+      resetToAuth();
     } catch (err) {
       console.error('Logout error:', err);
       alert('Ошибка при выходе из аккаунта');
@@ -184,6 +181,7 @@ export default function ProfileShared({ navigation, role: roleProp }) {
           </View>
           <Text style={s.name}>{(user.surname || '') + ' ' + (user.name || '')}</Text>
           {user.city && <View style={s.infoRow}><Ionicons name="location" size={16} color="#EC1B23"/><Text style={s.infoText}>{user.city.name}</Text></View>}
+          {user.phone && <View style={s.infoRow}><Ionicons name="call" size={16} color="#EC1B23"/><Text style={s.infoText}>{user.phone}</Text></View>}
           <TouchableOpacity style={[s.AuthButton, { marginTop: 16, paddingVertical: 10, paddingHorizontal: 20 }]} onPress={openEditProfile}>
             <Text style={s.buttonText}>Редактировать профиль</Text>
           </TouchableOpacity>
@@ -329,6 +327,20 @@ export default function ProfileShared({ navigation, role: roleProp }) {
             <Ionicons size={24} color={'#EC1B23'} name="chevron-forward" />
           </TouchableOpacity>
         )}
+
+        {/* Settings Button */}
+        <TouchableOpacity 
+          style={[s.geoContainer1, { marginTop: 16, marginBottom: 8 }]}
+          onPress={openSettings}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={s.titleGeo}>Настройки</Text>
+            <Text style={{ color: '#666', marginTop: 4, fontSize: 12 }}>
+              Документы, контакты и информация
+            </Text>
+          </View>
+          <Ionicons size={24} color={'#EC1B23'} name="chevron-forward" />
+        </TouchableOpacity>
 
         {/* Logout Button */}
         <TouchableOpacity 

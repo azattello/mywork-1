@@ -7,9 +7,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 // Клиент
+import HomeCustomer from './HomeCustomer';
 import Home from './Home';
 import SpecialistsCatalogScreen from './SpecialistsCatalogScreen';
-import CreateApplicationScreen from './CreateApplicationScreen';
+import CreateApplicationWizard from './CreateApplicationWizard';
 import Apps from './AppsScreen';
 import Account from './AccountScreen';
 import MyApplicationsScreen from './MyApplicationsScreen';
@@ -47,6 +48,12 @@ import SpecialistProfileView from './SpecialistProfileView';
 import AvailableApplicationsScreen from './AvailableApplicationsScreen';
 import ApplicationDetailScreen from './ApplicationDetailScreen';
 import ChatListScreen from './ChatListScreen';
+import CategoriesListScreen from './CategoriesListScreen';
+import CreateResponseWizard from './CreateResponseWizard';
+import ReviewScreen from './ReviewScreen';
+import SettingsScreen from './SettingsScreen';
+import AboutAppScreen from './AboutAppScreen';
+import DocumentViewerScreen from './DocumentViewerScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -63,11 +70,11 @@ function TabNav() {
             case 'Главная':
               iconName = focused ? 'home' : 'home-outline';
               break;
-            case 'Каталог':
-              iconName = focused ? 'list' : 'list-outline';
-              break;
             case 'Создать заказ':
               iconName = focused ? 'add-circle' : 'add-circle-outline';
+              break;
+            case 'Чаты':
+              iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline';
               break;
             case 'Мои заявки':
               iconName = focused ? 'document' : 'document-outline';
@@ -88,9 +95,9 @@ function TabNav() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Главная" component={Home} />
-      <Tab.Screen name="Каталог" component={SpecialistsCatalogScreen} />
-      <Tab.Screen name="Создать заказ" component={CreateApplicationScreen} />
+      <Tab.Screen name="Главная" component={HomeCustomer} />
+      <Tab.Screen name="Создать заказ" component={CreateApplicationWizard} />
+      <Tab.Screen name="Чаты" component={ChatListScreen} />
       <Tab.Screen name="Мои заявки" component={MyApplicationsScreen} />
       <Tab.Screen name="Аккаунт" component={Account} />
     </Tab.Navigator>
@@ -110,13 +117,10 @@ function TabPro({ unreadChatsCount = 0 }) {
               iconName = focused ? 'home' : 'home-outline';
               break;
             case 'Входящие':
-              iconName = focused ? 'inbox' : 'inbox-outline';
+              iconName = focused ? 'mail' : 'mail-outline';
               break;
             case 'Чаты':
-              iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-              break;
-            case 'Мои заявки':
-              iconName = focused ? 'document' : 'document-outline';
+              iconName = focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline';
               break;
             case 'Лента':
               iconName = focused ? 'flash' : 'flash-outline';
@@ -138,7 +142,6 @@ function TabPro({ unreadChatsCount = 0 }) {
       <Tab.Screen name="Главная" component={HomePro} />
       <Tab.Screen name="Входящие" component={IncomingApplicationsScreen} />
       <Tab.Screen name="Чаты" component={ChatListScreen} />
-      <Tab.Screen name="Мои заявки" component={AppsPro} />
       <Tab.Screen name="Лента" component={AvailableApplicationsScreen} />
       <Tab.Screen name="Аккаунт" component={AccountPro} />
     </Tab.Navigator>
@@ -252,7 +255,12 @@ export default function Main({navigation}) {
         />
         <Stack.Screen
           name={'CreateApplication'}
-          component={CreateApplicationScreen}
+          component={CreateApplicationWizard}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'CreateResponse'}
+          component={CreateResponseWizard}
           options={{headerShown: false}}
         />
         <Stack.Screen
@@ -271,12 +279,32 @@ export default function Main({navigation}) {
           options={{headerShown: false}}
         />
         <Stack.Screen
+          name={'AvailableApplicationsScreen'}
+          component={AvailableApplicationsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'CategoriesList'}
+          component={CategoriesListScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'CategoriesListScreen'}
+          component={CategoriesListScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
           name={'SpecialistsCatalog'}
           component={SpecialistsCatalogScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen
           name={'ApplicationDetail'}
+          component={ApplicationDetailScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'ApplicationDetailScreen'}
           component={ApplicationDetailScreen}
           options={{headerShown: false}}
         />
@@ -321,6 +349,11 @@ export default function Main({navigation}) {
           options={{headerShown: false}}
         />
         <Stack.Screen
+          name={'ReviewScreen'}
+          component={ReviewScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
           name={'Фильтр'}
           component={FilterScreenPro}
           oprions={{headerShown: false}}
@@ -329,6 +362,21 @@ export default function Main({navigation}) {
           name={'Уведомления'}
           component={NotificationsScreen}
           oprions={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'Settings'}
+          component={SettingsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'AboutApp'}
+          component={AboutAppScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'DocumentViewer'}
+          component={DocumentViewerScreen}
+          options={{headerShown: false}}
         />
         
        

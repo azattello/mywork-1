@@ -19,13 +19,25 @@ const storage = multer.diskStorage({
   }
 });
 
-// Фильтр файлов - только изображения
+// Фильтр файлов - изображения, видео, документы
 const fileFilter = (req, file, cb) => {
-  const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  // Разрешенные типы файлов
+  const allowedMimes = [
+    // Изображения
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg',
+    // Видео
+    'video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm',
+    // Документы
+    'application/pdf', 'text/plain', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ];
+  
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed'), false);
+    cb(new Error('File type not allowed'), false);
   }
 };
 
@@ -34,7 +46,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 50 * 1024 * 1024, // 50MB для видео
   }
 });
 

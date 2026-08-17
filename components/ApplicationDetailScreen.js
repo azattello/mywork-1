@@ -10,13 +10,15 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from '../utils/apiClient';
+import { getImageUri, getAvatarUri } from '../utils/imageUri';
 
 const ApplicationDetailScreen = ({ route, navigation }) => {
-  const { applicationId } = route.params;
+  const applicationId = route?.params?.applicationId || route?.params?.application?._id || null;
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -24,24 +26,34 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [responses, setResponses] = useState([]);
   
-  const [reviewModalVisible, setReviewModalVisible] = useState(false);
-  const [reviewData, setReviewData] = useState({
-    rating: 5,
-    text: '',
-  });
   const [menuModalVisible, setMenuModalVisible] = useState(false);
 
   useEffect(() => {
+    if (!applicationId) {
+      setApplication(null);
+      setLoading(false);
+      return;
+    }
+
     loadApplicationDetail();
     loadResponses();
   }, [applicationId]);
 
   const loadResponses = async () => {
+    if (!applicationId) {
+      setResponses([]);
+      return;
+    }
+
     try {
       const res = await apiClient.get(`/api/applications/${applicationId}/responses`);
       const list = res?.data?.data || res?.data || [];
       setResponses(Array.isArray(list) ? list : []);
     } catch (err) {
+      if (err?.response?.status === 403) {
+        setResponses([]);
+        return;
+      }
       console.error('Error loading responses', err);
     }
   };
@@ -92,7 +104,16 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
       Alert.alert('Ошибка', 'Невозможно открыть профиль');
       return;
     }
-    navigation.navigate('SpecialistProfile', { userId, userName });
+    navigation.navigate('SpecialistProfileView', { userId, userName });
+  };
+
+  const handleRespondToApplication = () => {
+    if (!applicationId) {
+      Alert.alert('Ошибка', 'Не удалось определить заявку');
+      return;
+    }
+
+    navigation.navigate('CreateResponse', { applicationId });
   };
 
   const handleAcceptResponse = async (responseId) => {
@@ -147,7 +168,7 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
   const handleMenuAction = (action) => {
     setMenuModalVisible(false);
     if (action === 'edit') {
-      navigation.navigate('CreateApplicationScreen', { applicationId });
+      navigation.navigate('CreateApplication', { applicationId });
     } else if (action === 'delete') {
       Alert.alert('Удалить заказ?', 'Это действие нельзя отменить', [
         { text: 'Отмена' },
@@ -171,22 +192,44 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleReviewSubmit = async () => {
-    try {
-      setUpdating(true);
-      const res = await apiClient.post(`/api/applications/${applicationId}/review`, reviewData);
-      if (res?.status === 200 || res?.status === 201) {
-        Alert.alert('Успех', 'Отзыв добавлен');
-        setReviewModalVisible(false);
-        loadApplicationDetail();
-      }
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить отзыв');
-      console.error('Error adding review:', error);
-    } finally {
-      setUpdating(false);
-    }
+  const handleOpenReviewScreen = () => {
+    if (!applicationId) return;
+
+    navigation.navigate('ReviewScreen', {
+      applicationId,
+      userName: specialist?.name || 'Специалист',
+      onReviewSubmitted: async () => {
+        await loadApplicationDetail();
+      },
+    });
   };
+
+  const isOwner = !!currentUser && !!application && String(application.user?._id || application.user) === String(currentUser._id || currentUser.id);
+  const priceLabel = (() => {
+    const min = Number(application?.budgetMin ?? 0);
+    const max = Number(application?.budgetMax ?? 0);
+    const sum = Number(application?.summ ?? 0);
+    if (application?.budgetMin != null || application?.budgetMax != null) {
+      if (min > 0 || max > 0) {
+        return `${min} - ${max} ₸`;
+      }
+    }
+    if (sum > 0) return `${sum} ₸`;
+    return 'Договорная цена';
+  })();
+
+  const currentRole = currentUser?.role || currentUser?.activeRole || 'user';
+  const isSpecialistView = currentRole === 'specialist' || currentRole === 'profi';
+  const myResponse = !isOwner && Array.isArray(responses)
+    ? responses.find((r) => String(r.specialist?._id || r.specialist || r.specialistId) === String(currentUser?._id || currentUser?.id)) || null
+    : null;
+  const assignmentStateLabel = application?.pendingSpecialistConfirmation
+    ? 'Ожидаем подтверждение специалиста'
+    : application?.currentSpecialist
+      ? 'Специалист назначен'
+      : application?.status === 'in_progress'
+        ? 'В работе'
+        : 'Открыта';
 
   if (loading) {
     return (
@@ -212,22 +255,39 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={24} color="#000" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setMenuModalVisible(true)}>
-            <Ionicons name="ellipsis-vertical" size={24} color="#000" />
-          </TouchableOpacity>
+          {isOwner && (
+            <TouchableOpacity onPress={() => setMenuModalVisible(true)}>
+              <Ionicons name="ellipsis-vertical" size={24} color="#000" />
+            </TouchableOpacity>
+          )}
+          {!isOwner && <View style={{ width: 24 }} />}
         </View>
 
         {/* Main Title & Price */}
         <View style={styles.titleSection}>
           <Text style={styles.titleLarge}>{application.title}</Text>
-          {application.budgetMin != null && application.budgetMax != null ? (
-            <Text style={styles.priceLarge}>
-              {application.budgetMin} - {application.budgetMax} ₸
-            </Text>
-          ) : application.summ != null ? (
-            <Text style={styles.priceLarge}>{application.summ} ₸</Text>
-          ) : null}
+          <Text style={styles.priceLarge}>{priceLabel}</Text>
         </View>
+
+        {Array.isArray(application.photos) && application.photos.length > 0 && (
+          <View style={styles.photoSection}>
+            <Text style={styles.sectionTitle}>Фото заказа</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRow}>
+              {application.photos.map((photo, index) => {
+                const imageUri = getImageUri(photo?.url || photo);
+                if (!imageUri) return null;
+                return (
+                  <Image
+                    key={`${imageUri}-${index}`}
+                    source={{ uri: imageUri }}
+                    style={styles.applicationPhoto}
+                    resizeMode="cover"
+                  />
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Meta Info (City, Date, Count) */}
         {(application.city || application.createdAt || responses.length > 0) && (
@@ -252,10 +312,45 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
 
         {/* Status Badge */}
         {application.status && (
-          <View style={[styles.statusBadge, { backgroundColor: application.status === 'open' ? '#E3F2FD' : application.status === 'in_progress' ? '#FFF3E0' : '#F3E5F5' }]}>
-            <Text style={[styles.statusBadgeText, { color: application.status === 'open' ? '#1976D2' : application.status === 'in_progress' ? '#F57C00' : '#7B1FA2' }]}>
-              {application.status === 'open' ? 'Открыт' : application.status === 'in_progress' ? 'В процессе' : 'Завершен'}
+          <View style={[
+            styles.statusBadge,
+            {
+              backgroundColor: application.pendingSpecialistConfirmation
+                ? '#FFF3E0'
+                : application.status === 'open'
+                  ? '#E3F2FD'
+                  : application.status === 'in_progress'
+                    ? '#FFF3E0'
+                    : '#F3E5F5',
+            },
+          ]}>
+            <Text style={[
+              styles.statusBadgeText,
+              {
+                color: application.pendingSpecialistConfirmation
+                  ? '#F57C00'
+                  : application.status === 'open'
+                    ? '#1976D2'
+                    : application.status === 'in_progress'
+                      ? '#F57C00'
+                      : '#7B1FA2',
+              },
+            ]}>
+              {application.pendingSpecialistConfirmation
+                ? 'Ожидаем подтверждение специалиста'
+                : application.status === 'open'
+                  ? 'Открыт'
+                  : application.status === 'in_progress'
+                    ? 'В процессе'
+                    : 'Завершен'}
             </Text>
+          </View>
+        )}
+
+        {assignmentStateLabel && (
+          <View style={styles.assignmentRow}>
+            <Ionicons name="information-circle-outline" size={16} color="#EC1B23" />
+            <Text style={styles.assignmentRowText}>{assignmentStateLabel}</Text>
           </View>
         )}
 
@@ -364,7 +459,7 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Специалист</Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate('ChatScreen', { otherUserId: specialist._id, otherUserName: specialist.name, applicationId: applicationId })}
+              onPress={() => navigation.navigate('ChatScreen', { otherUserId: specialist._id, otherUserName: specialist.name, applicationId: applicationId, applicationTitle: application?.title || 'Заявка' })}
             >
               <View style={styles.specialistRow}>
                 <View>
@@ -402,8 +497,40 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* Responses list */}
-        {responses && responses.length > 0 && (
+        {!isOwner && isSpecialistView && (
+          <View style={styles.section}>
+            {!myResponse ? (
+              <TouchableOpacity style={styles.mainRespondButton} onPress={handleRespondToApplication}>
+                <Ionicons name="send" size={18} color="#fff" />
+                <Text style={styles.mainRespondButtonText}>Откликнуться</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.responseCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.responsePrice}>{myResponse.price ?? 'Договорная'} ₸</Text>
+                  <Text style={styles.responseMessage}>{myResponse.message || 'Без комментария'}</Text>
+                  <Text style={styles.responseStatus}>
+                    Статус: {myResponse.status === 'pending' ? 'На рассмотрении' : myResponse.status === 'accepted' ? 'Принят' : 'Отклонен'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.chatButton}
+                  onPress={() => navigation.navigate('ChatScreen', {
+                    applicationId: applicationId,
+                    otherUserId: application.user?._id || application.user,
+                    otherUserName: application.user?.name || 'Заказчик',
+                    applicationTitle: application?.title || 'Заявка',
+                  })}
+                >
+                  <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+                  <Text style={styles.chatButtonText}>Чат</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {isOwner && !isSpecialistView && responses && responses.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Отклики</Text>
             {responses.map((r) => (
@@ -428,27 +555,20 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
                   )}
                 </View>
                 <View style={styles.responseActions}>
-                  {r.status === 'pending' && (
-                    <>
-                      <TouchableOpacity style={styles.acceptButton} onPress={() => handleAcceptResponse(r._id)}>
-                        <Ionicons name="checkmark" size={14} color="#fff" />
-                        <Text style={styles.acceptButtonText}>Принять</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.rejectButton} onPress={() => handleRejectResponse(r._id)}>
-                        <Ionicons name="close" size={14} color="#fff" />
-                        <Text style={styles.rejectButtonText}>Отклонить</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {r.status === 'accepted' && (
-                    <TouchableOpacity 
-                      style={styles.chatButton} 
-                      onPress={() => navigation.navigate('ChatScreen', { otherUserId: r.specialist?._id, otherUserName: r.specialist?.name, applicationId: applicationId })}
-                    >
-                      <Ionicons name="chatbubble-outline" size={18} color="#fff" />
-                      <Text style={styles.chatButtonText}>Чат</Text>
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity
+                    style={styles.chatButton}
+                    onPress={() => navigation.navigate('ChatScreen', { otherUserId: r.specialist?._id, otherUserName: r.specialist?.name, applicationId: applicationId, applicationTitle: application?.title || 'Заявка' })}
+                  >
+                    <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+                    <Text style={styles.chatButtonText}>Чат</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.secondaryActionButton}
+                    onPress={() => navigation.navigate('SpecialistProfileView', { userId: r.specialist?._id, userName: `${r.specialist?.surname || ''} ${r.specialist?.name || ''}`.trim() || 'Специалист' })}
+                  >
+                    <Ionicons name="person-outline" size={16} color="#333" />
+                    <Text style={styles.secondaryActionText}>Профиль</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             ))}
@@ -458,7 +578,7 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
         {/* Review */}
         {application.status === 'closed' && !application.review && (
           <View style={styles.section}>
-            <TouchableOpacity style={styles.reviewButton} onPress={() => setReviewModalVisible(true)}>
+            <TouchableOpacity style={styles.reviewButton} onPress={handleOpenReviewScreen}>
               <Ionicons name="star-outline" size={18} color="#fff" />
               <Text style={styles.reviewButtonText}>Оставить отзыв</Text>
             </TouchableOpacity>
@@ -513,68 +633,6 @@ const ApplicationDetailScreen = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Review Modal */}
-      <Modal
-        visible={reviewModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setReviewModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Оставить отзыв</Text>
-              <TouchableOpacity onPress={() => setReviewModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.modalBody}>
-              <Text style={styles.reviewQuestion}>Оценка:</Text>
-              <View style={styles.starPicker}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <TouchableOpacity
-                    key={star}
-                    onPress={() => setReviewData({ ...reviewData, rating: star })}
-                    style={{ marginRight: 8 }}
-                  >
-                    <Ionicons
-                      name={star <= reviewData.rating ? 'star' : 'star-outline'}
-                      size={28}
-                      color="#FFD700"
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.reviewQuestion}>Ваш отзыв:</Text>
-              <TextInput
-                style={styles.reviewInput}
-                placeholder="Напишите ваш отзыв..."
-                placeholderTextColor="#999"
-                value={reviewData.text}
-                onChangeText={(text) => setReviewData({ ...reviewData, text })}
-                multiline
-                numberOfLines={4}
-              />
-            </View>
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setReviewModalVisible(false)}>
-                <Text style={styles.cancelButtonText}>Отмена</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleReviewSubmit}
-                disabled={updating}
-              >
-                {updating ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Отправить</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -594,6 +652,20 @@ const styles = StyleSheet.create({
   titleSection: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+  },
+  photoSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  photoRow: {
+    paddingVertical: 8,
+  },
+  applicationPhoto: {
+    width: 150,
+    height: 110,
+    borderRadius: 12,
+    marginRight: 10,
+    backgroundColor: '#F5F5F5',
   },
   titleLarge: {
     fontSize: 24,
@@ -627,6 +699,22 @@ const styles = StyleSheet.create({
   statusBadgeText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  assignmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFF5F5',
+  },
+  assignmentRowText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
   },
   actionButtonsContainer: {
     paddingHorizontal: 16,
@@ -790,6 +878,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#fff',
+  },
+  secondaryActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#F1F1F1',
+    borderRadius: 6,
+    gap: 6,
+  },
+  secondaryActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
   },
   chatButton: {
     flexDirection: 'row',

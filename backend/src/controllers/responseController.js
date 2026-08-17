@@ -74,7 +74,7 @@ exports.createResponse = async (req, res) => {
     if (application.user) {
       await notificationController.createNotification(
         application.user,
-        'response',
+        'new_response',
         'Новый отклик на ваш заказ',
         `${specialist?.name || 'Специалист'} откликнулся на ваш заказ "${application.title}"`,
         { applicationId, responseId: response._id, specialistId },
@@ -95,15 +95,30 @@ exports.createResponse = async (req, res) => {
 
 exports.getApplicationResponses = async (req, res) => {
   const { applicationId } = req.params;
-  
+
   const application = await Application.findById(applicationId);
   if (!application) {
     return res.status(404).json({ success: false, message: 'Application not found' });
   }
 
-  // Only application owner can see responses
-  if (application.user.toString() !== req.user._id.toString()) {
+  const isOwner = application.user.toString() === req.user._id.toString();
+  const isSpecialist = !!req.user._id;
+
+  if (!isOwner && !isSpecialist) {
     return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+
+  if (!isOwner) {
+    const myResponse = await Response.findOne({
+      application: applicationId,
+      specialist: req.user._id,
+    }).populate('specialist', 'name surname avatarUrl');
+
+    if (!myResponse) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    return res.json({ success: true, data: [myResponse] });
   }
 
   const responses = await Response.find({ application: applicationId })
@@ -132,10 +147,12 @@ exports.acceptResponse = async (req, res) => {
     return res.status(404).json({ success: false, message: 'Response not found' });
   }
 
-  // Set proposed specialist and pending confirmation
+  // Set proposed specialist and immediately hide the application from the public feed
   application.proposedSpecialist = response.specialist;
   application.pendingSpecialistConfirmation = true;
-  // Keep application.active and status as-is until specialist confirms
+  application.currentSpecialist = null;
+  application.active = false;
+  application.status = 'open';
   await application.save();
 
   response.status = 'pending';
@@ -341,6 +358,9 @@ exports.acceptWork = async (req, res) => {
 
     // Update application
     application.workAccepted = true;
+    application.status = 'closed';
+    application.completedAt = application.completedAt || new Date();
+    application.active = false;
     await application.save();
 
     // Emit socket event to specialist
@@ -359,6 +379,37 @@ exports.acceptWork = async (req, res) => {
 };
 
 // Create review
+const recalculateUserRating = async (userId) => {
+  const Review = require('../models/Review');
+  const reviews = await Review.find({
+    $or: [
+      { toUser: userId },
+      { to: userId }
+    ]
+  });
+  const total = reviews.length;
+
+  if (total === 0) {
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        rating: 0,
+        reviewsCount: 0,
+        reviewCount: 0,
+      }
+    }, { new: true });
+    return;
+  }
+
+  const avgRating = reviews.reduce((sum, review) => sum + (review.rating || 0), 0) / total;
+  await User.findByIdAndUpdate(userId, {
+    $set: {
+      rating: Number(avgRating.toFixed(1)),
+      reviewsCount: total,
+      reviewCount: total,
+    }
+  }, { new: true });
+};
+
 exports.createReview = async (req, res) => {
   const { applicationId } = req.params;
   const { rating, text } = req.body;
@@ -379,9 +430,13 @@ exports.createReview = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Application not found' });
     }
 
-    // Work must be accepted
+    // Work must be accepted and application closed/completed
     if (!application.workAccepted) {
       return res.status(400).json({ success: false, message: 'Work must be accepted first' });
+    }
+
+    if (application.status !== 'closed' && application.status !== 'completed') {
+      return res.status(400).json({ success: false, message: 'Application must be closed before review' });
     }
 
     // Either client or specialist can review
@@ -410,16 +465,21 @@ exports.createReview = async (req, res) => {
       imageUrl = `/uploads/${req.file.filename}`;
     }
 
+    const targetUserId = isClient ? application.currentSpecialist : application.user;
+
     const review = new Review({
       application: applicationId,
       author: userId,
+      from: userId,
+      to: targetUserId,
       rating: parseInt(rating),
       text: text.trim(),
       image: imageUrl,
-      toUser: isClient ? application.currentSpecialist : application.user,
+      toUser: targetUserId,
     });
 
     await review.save();
+    await recalculateUserRating(targetUserId);
 
     // Check if both parties have reviewed
     const allReviews = await Review.find({ application: applicationId });
@@ -428,20 +488,6 @@ exports.createReview = async (req, res) => {
     // Update application if both reviewed
     if (bothReviewed) {
       application.status = 'closed';
-      
-      // Calculate specialist rating
-      if (isClient) {
-        const specialistReviews = await Review.find({ toUser: application.currentSpecialist });
-        const avgRating = specialistReviews.reduce((sum, r) => sum + r.rating, 0) / specialistReviews.length;
-        
-        const specialist = await User.findById(application.currentSpecialist);
-        if (specialist) {
-          specialist.rating = avgRating;
-          specialist.reviewCount = specialistReviews.length;
-          await specialist.save();
-        }
-      }
-      
       await application.save();
     }
 

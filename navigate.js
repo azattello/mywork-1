@@ -1,6 +1,6 @@
 import React from "react";
 import { createStackNavigator } from '@react-navigation/stack';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 
 import Main from './components/Main';
 import SplashScreen from "./components/SplashScreen";
@@ -47,10 +47,16 @@ import MyApplicationsScreen from "./components/MyApplicationsScreen";
 import IncomingApplicationsScreen from "./components/IncomingApplicationsScreen";
 
 const  Stack = createStackNavigator();
+export const navigationRef = createNavigationContainerRef();
 
+export const resetToAuth = () => {
+    if (navigationRef.isReady()) {
+        navigationRef.reset({ index: 0, routes: [{ name: 'Auth' }] });
+    }
+};
 
 export default function Navigate() {
-    return <NavigationContainer>
+    return <NavigationContainer ref={navigationRef}>
 
         <Stack.Navigator initialRouteName="SplashScreen">
 

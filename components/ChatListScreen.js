@@ -4,10 +4,12 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  SectionList,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,10 +22,57 @@ const ChatListScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [responses, setResponses] = useState([]);
 
   useEffect(() => {
     loadChats();
   }, []);
+
+  const loadMyResponses = async () => {
+    try {
+      const userStr = await AsyncStorage.getItem('@currentUser');
+      if (!userStr) return;
+      const user = JSON.parse(userStr);
+      const userId = user?._id || user?.id;
+      if (!userId) return;
+
+      const res = await apiClient.get('/api/applications');
+      const applications = res?.data?.data || res?.data || [];
+      if (!Array.isArray(applications)) {
+        setResponses([]);
+        return;
+      }
+
+      const result = [];
+      for (const app of applications) {
+        try {
+          const responsesRes = await apiClient.get(`/api/applications/${app._id}/responses`);
+          const list = responsesRes?.data?.data || responsesRes?.data || [];
+          const myResponse = (Array.isArray(list) ? list : []).find(r => {
+            const specialistId = r?.specialist?._id || r?.specialist || r?.specialistId;
+            return String(specialistId) === String(userId);
+          });
+
+          if (myResponse) {
+            result.push({
+              _id: myResponse._id || `${app._id}-${userId}`,
+              applicationId: app._id,
+              conversationId: myResponse.conversationId,
+              applicationTitle: app.title || 'Заявка',
+              status: myResponse.status,
+              user: app.user,
+            });
+          }
+        } catch (e) {
+          // ignore per app errors
+        }
+      }
+      setResponses(result);
+    } catch (error) {
+      console.log('My responses load failed', error);
+      setResponses([]);
+    }
+  };
 
   const loadChats = async () => {
     try {
@@ -37,7 +86,6 @@ const ChatListScreen = ({ navigation }) => {
         const res = await apiClient.get('/api/conversations');
         const list = res?.data?.data || res?.data || [];
         if (Array.isArray(list)) {
-          // Filter conversations for current user and sort by latest message
           const userConvs = list.filter(conv =>
             conv.participants?.some(p => (p._id || p.id) === (user._id || user.id))
           );
@@ -59,6 +107,8 @@ const ChatListScreen = ({ navigation }) => {
 
           setConversations(sorted);
         }
+
+        await loadMyResponses();
       }
     } catch (error) {
       console.error('Error loading chats:', error);
@@ -77,47 +127,115 @@ const ChatListScreen = ({ navigation }) => {
 
   const getOtherUser = (conv) => {
     if (!conv.participants || conv.participants.length < 2) return null;
-    const other = conv.participants.find(p => (p._id || p.id) !== (currentUser?._id || currentUser?.id));
+    const currentUserId = currentUser?._id || currentUser?.id;
+    const other = conv.participants.find((p) => {
+      const pid = p?._id || p?.id || p;
+      return String(pid) !== String(currentUserId);
+    });
     return other;
+  };
+
+  const getConversationApplicationData = (conv) => {
+    const applicationId = conv?.application?._id || conv?.application || conv?.applicationId || null;
+    const applicationTitle = conv?.application?.title || conv?.applicationTitle || conv?.title || 'Заявка';
+    return { applicationId, applicationTitle };
   };
 
   const handleChatPress = (conv) => {
     const other = getOtherUser(conv);
     if (other) {
+      const { applicationId, applicationTitle } = getConversationApplicationData(conv);
       navigation.navigate('ChatScreen', {
         conversationId: conv._id || conv.id,
         otherUserId: other._id || other.id,
         otherUserName: other.name || 'Пользователь',
-        applicationId: conv.applicationId,
+        applicationId,
+        applicationTitle,
       });
     }
   };
 
   const handleDeleteChat = (conv) => {
-    if (global.confirmModal) {
-      global.confirmModal.show({
-        title: 'Удалить чат',
-        message: 'Чат будет удален. Это действие необратимо.',
-        confirmText: 'Удалить',
-        cancelText: 'Отмена',
-        type: 'error',
-        onConfirm: async () => {
-          try {
-            // Delete conversation via API
-            const convId = conv._id || conv.id;
-            await apiClient.delete(`/api/conversations/${convId}`);
-            Toast.success('Чат удален');
-            await loadChats();
-          } catch (error) {
-            console.error('Delete chat error:', error);
-            Toast.error('Не удалось удалить чат');
-          }
+    Alert.alert(
+      'Удалить чат',
+      'Чат будет удалён из списка. Это действие нельзя отменить.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const convId = conv._id || conv.id;
+              await apiClient.delete(`/api/conversations/${convId}`);
+              Toast.success('Чат удален');
+              await loadChats();
+            } catch (error) {
+              console.error('Delete chat error:', error);
+              Toast.error('Не удалось удалить чат');
+            }
+          },
         },
-      });
-    } else {
-      Toast.warning('Функция удаления будет доступна скоро');
-    }
+      ]
+    );
   };
+
+  const renderResponseItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.responseItem}
+      onPress={() => {
+        if (item.applicationId) {
+          navigation.navigate('ChatScreen', {
+            applicationId: item.applicationId,
+            otherUserId: item.user?._id || item.user,
+            otherUserName: item.user?.name || 'Заказчик',
+            applicationTitle: item.applicationTitle || 'Заявка',
+          });
+        }
+      }}
+      activeOpacity={0.8}
+    >
+      <View style={styles.responseBadge}>
+        <Ionicons name="send" size={12} color="#fff" />
+      </View>
+      <View style={styles.responseContent}>
+        <Text style={styles.responseTitle} numberOfLines={1}>{item.applicationTitle || 'Отклик'}</Text>
+        <Text style={styles.responseStatus}>
+          {item.status === 'accepted' ? 'Принято' : item.status === 'pending' ? 'На рассмотрении' : 'Отправлен'}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color="#999" />
+    </TouchableOpacity>
+  );
+
+  const sectionedData = (() => {
+    const pendingResponses = responses.filter(item => item.status === 'pending' || !item.status);
+    const chatInProgress = conversations.filter(conv => {
+      const appId = conv?.application?._id || conv?.application || conv?.applicationId;
+      const matched = responses.find(r => r.applicationId === appId);
+      return matched && matched.status === 'accepted';
+    });
+    const chatStarted = conversations.filter(conv => {
+      const appId = conv?.application?._id || conv?.application || conv?.applicationId;
+      const hasResponse = responses.some(r => r.applicationId === appId);
+      return !hasResponse && conv.lastMessage;
+    });
+    const closed = conversations.filter(conv => {
+      const appId = conv?.application?._id || conv?.application || conv?.applicationId;
+      return responses.some(r => r.applicationId === appId && (r.status === 'rejected' || r.status === 'closed'));
+    });
+
+    return [
+      { title: 'Отклики', data: pendingResponses },
+      { title: 'Начала переписки', data: chatStarted },
+      { title: 'В работе', data: chatInProgress },
+      { title: 'Закрыто', data: closed },
+    ].filter(section => section.data.length > 0);
+  })();
+
+  const renderSectionHeader = ({ section }) => (
+    <Text style={styles.sectionTitle}>{section.title}</Text>
+  );
 
   const renderChatItem = ({ item }) => {
     const otherUser = getOtherUser(item);
@@ -224,24 +342,20 @@ const ChatListScreen = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Чаты</Text>
-        <TouchableOpacity onPress={loadChats}>
-          <Ionicons name="refresh" size={24} color="#EC1B23" />
-        </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={conversations}
-        renderItem={renderChatItem}
-        keyExtractor={(item) => item._id || item.id}
+      <SectionList
+        sections={sectionedData}
+        keyExtractor={(item, index) => item?._id ? String(item._id) : `${item?.applicationId || 'chat'}-${index}`}
+        renderItem={({ item, section }) => {
+          if (section.title === 'Отклики') {
+            return renderResponseItem({ item });
+          }
+          return renderChatItem({ item });
+        }}
+        renderSectionHeader={renderSectionHeader}
         contentContainerStyle={styles.list}
         ListEmptyComponent={renderEmpty}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#EC1B23"
-          />
-        }
         showsVerticalScrollIndicator={false}
       />
     </SafeAreaView>
@@ -255,15 +369,25 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#EFEFEF',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  headerSpacer: {
+    width: 24,
   },
   headerTitle: {
+    flex: 1,
+    textAlign: 'center',
     fontSize: 18,
     fontWeight: '700',
     color: '#000',
@@ -272,23 +396,29 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   list: {
-    padding: 8,
-    paddingBottom: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    paddingBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#222',
+    marginHorizontal: 12,
+    marginTop: 14,
+    marginBottom: 6,
   },
   chatItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 10,
+    borderRadius: 12,
     marginHorizontal: 8,
     marginVertical: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
   },
   avatarBox: {
     marginRight: 12,
@@ -378,6 +508,40 @@ const styles = StyleSheet.create({
   },
   moreButton: {
     padding: 8,
+  },
+  responseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 8,
+    marginVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+  },
+  responseBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EC1B23',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  responseContent: {
+    flex: 1,
+  },
+  responseTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#222',
+  },
+  responseStatus: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 3,
   },
   empty: {
     flex: 1,

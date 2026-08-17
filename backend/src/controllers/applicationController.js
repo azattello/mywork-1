@@ -2,8 +2,20 @@ const Application = require('../models/Application');
 const User = require('../models/User');
 const notificationController = require('./notificationController');
 
+const normalizeApplicationStatus = (value) => {
+  if (!value) return 'open';
+  const legacyMap = {
+    new: 'open',
+    agreed: 'in_progress',
+    completed: 'closed',
+    cancelled: 'closed',
+  };
+  return legacyMap[value] || value;
+};
+
 exports.create = async (req, res) => {
   const { title, summ, info, city, categories, budgetType, budgetMin, budgetMax, workMode, address, deadline, active, userID, currentSpecialist, status } = req.body;
+  const normalizedStatus = normalizeApplicationStatus(status);
 
   // Валидация обязательных полей
   if (!title) return res.status(400).json({ success: false, message: 'Title is required' });
@@ -74,8 +86,8 @@ exports.create = async (req, res) => {
     active: typeof active === 'boolean' ? active : true,
     user: user._id,
     currentSpecialist: specialist ? specialist._id : undefined,
-    status: status || 'open',
-    proposalStatus: specialist ? 'active' : 'closed' // Если есть специалист - активное предложение, если нет - закрытое
+    status: normalizedStatus,
+    proposalStatus: specialist ? 'active' : 'closed'
   });
 
   await app.save();
@@ -110,6 +122,8 @@ exports.getByUser = async (req, res) => {
     const apps = await Application.find({ user: userId })
       .sort({ createdAt: -1 })
       .populate('currentSpecialist', 'name surname')
+      .populate('city', 'name')
+      .populate('categories', 'name')
       .populate('responses')
       .populate('review')
       .populate({
@@ -140,9 +154,17 @@ exports.getBySpecialist = async (req, res) => {
   }
 
   try {
-    const apps = await Application.find({ currentSpecialist: specialistId })
+    const apps = await Application.find({
+      $or: [
+        { currentSpecialist: specialistId },
+        { proposedSpecialist: specialistId, pendingSpecialistConfirmation: true },
+      ]
+    })
       .sort({ createdAt: -1 })
       .populate('currentSpecialist', 'name surname')
+      .populate('proposedSpecialist', 'name surname')
+      .populate('city', 'name')
+      .populate('categories', 'name')
       .populate({
         path: 'user',
         select: 'name surname city avatar',
@@ -164,10 +186,41 @@ exports.getBySpecialist = async (req, res) => {
   // Get all applications
   exports.getAll = async (req, res) => {
     try {
-      const apps = await Application.find()
+      const requestedStatus = (req.query.status || 'open').toString().trim().toLowerCase();
+      const filters = {
+        status: requestedStatus,
+        active: true,
+        $and: [
+          {
+            $or: [
+              { proposedSpecialist: { $exists: false } },
+              { proposedSpecialist: null },
+              { pendingSpecialistConfirmation: false },
+              { pendingSpecialistConfirmation: { $exists: false } },
+            ],
+          },
+          {
+            $or: [
+              { currentSpecialist: { $exists: false } },
+              { currentSpecialist: null },
+            ],
+          },
+          {
+            $or: [
+              { status: 'open' },
+              { status: { $exists: false } },
+            ],
+          },
+        ],
+      };
+
+      const apps = await Application.find(filters)
         .sort({ createdAt: -1 })
-        .lean()
-        .populate('user', 'name');
+        .populate('user', 'name surname')
+        .populate('city', 'name')
+        .populate('categories', 'name')
+        .populate('currentSpecialist', 'name surname')
+        .lean();
 
       return res.json({ success: true, data: apps });
     } catch (err) {
@@ -187,6 +240,7 @@ exports.getBySpecialist = async (req, res) => {
     try {
       const app = await Application.findById(id)
         .populate('currentSpecialist', 'name surname')
+        .populate('proposedSpecialist', 'name surname')
         .populate({
           path: 'user',
           select: 'name surname city',
@@ -195,6 +249,8 @@ exports.getBySpecialist = async (req, res) => {
             select: 'name'
           }
         })
+        .populate('city', 'name')
+        .populate('categories', 'name')
         .populate('responses')
         .populate('review')
         .lean();
@@ -235,3 +291,83 @@ exports.getBySpecialist = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Server error' });
     }
   };
+
+// Загрузить фото к заказу
+exports.uploadPhotos = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!req.files || !req.files.length) {
+      return res.status(400).json({ success: false, message: 'No files uploaded' });
+    }
+
+    // Найти заказ
+    const application = await Application.findById(id);
+    if (!application) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    // Проверить что это владелец заказа
+    if (application.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Only owner can upload photos' });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // Добавить новые фото
+    const photos = req.files.map(file => ({
+      url: `${baseUrl}/uploads/${file.filename}`,
+      uploadedAt: new Date()
+    }));
+
+    application.photos = application.photos || [];
+    application.photos.push(...photos);
+    
+    await application.save();
+
+    const updatedApp = await Application.findById(id);
+
+    res.json({ success: true, data: updatedApp });
+  } catch (err) {
+    console.error('Error uploading photos:', err);
+    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+};
+
+// Удалить фото из заказа
+exports.deletePhoto = async (req, res) => {
+  try {
+    const { id, photoUrl } = req.params;
+
+    const application = await Application.findById(id);
+    if (!application) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    // Проверить что это владелец заказа
+    if (application.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Only owner can delete photos' });
+    }
+
+    // Удалить фото с диска если нужно
+    const decodedUrl = decodeURIComponent(photoUrl);
+    const filename = decodedUrl.split('/uploads/').pop();
+    if (filename) {
+      const path = require('path');
+      const fs = require('fs');
+      const filePath = path.join(__dirname, '..', '..', 'uploads', filename);
+      fs.unlink(filePath, (err) => {
+        if (err) console.warn('Failed to delete photo file:', err.message);
+      });
+    }
+
+    // Удалить из массива
+    application.photos = (application.photos || []).filter(p => p.url !== decodedUrl);
+    await application.save();
+
+    res.json({ success: true, data: application });
+  } catch (err) {
+    console.error('Error deleting photo:', err);
+    res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+};
