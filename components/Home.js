@@ -232,10 +232,10 @@ export default function Home({navigation}) {
                 </View>
 
                 <View style={styles.gidContainer}>
-                  <Text style={styles.h1}>Yoyo гид</Text>
+                  <Text style={styles.h1}>mywork гид</Text>
                   <TouchableOpacity style={styles.collaps1}>
                     <Text style={styles.collapsText}>
-                      Yoyo.kz платный?
+                      mywork.kz платный?
                     </Text>
                     <Ionicons style={styles.collapsIcon} name="chevron-down-outline" size={20}></Ionicons>
                     

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Full implementation of a two-stage proposal system with work completion and review workflow for the YoYo.kz application. This system manages the entire lifecycle from specialist selection through project completion and reviews.
+Full implementation of a two-stage proposal system with work completion and review workflow for the mywork.kz application. This system manages the entire lifecycle from specialist selection through project completion and reviews.
 
 ---
 

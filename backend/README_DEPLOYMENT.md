@@ -92,7 +92,7 @@ nano .env
 ```
 PORT=4000
 NODE_ENV=production
-MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo?retryWrites=true&w=majority
+MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork?retryWrites=true&w=majority
 JWT_SECRET=<output из node generate-secrets.js>
 JWT_EXPIRES_IN=15m
 REFRESH_TOKEN_EXPIRES_IN=7d

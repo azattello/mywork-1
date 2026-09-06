@@ -314,7 +314,7 @@ backend/
 
 **Environment variables** (.env):
 ```
-MONGODB_URL=mongodb://localhost:27017/yoyo
+MONGODB_URL=mongodb://localhost:27017/mywork
 JWT_SECRET=your-secret-key
 REFRESH_TOKEN_SECRET=refresh-secret
 PORT=4000

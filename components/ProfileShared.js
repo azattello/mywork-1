@@ -67,7 +67,7 @@ export default function ProfileShared({ navigation, role: roleProp }) {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) return;
-      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.8 });
       if (res.cancelled || !res.assets || !res.assets.length) return;
       const asset = res.assets[0];
       const uri = asset.uri; const filename = uri.split('/').pop();
@@ -85,7 +85,7 @@ export default function ProfileShared({ navigation, role: roleProp }) {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) return;
-      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: false, quality: 0.8 });
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.8 });
       if (res.cancelled || !res.assets || !res.assets.length) return;
       const asset = res.assets[0];
       const uri = asset.uri; const filename = uri.split('/').pop();

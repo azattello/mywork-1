@@ -7,6 +7,7 @@ import SplashScreen from "./components/SplashScreen";
 import Role from "./components/role";
 import Reg from "./components/Reg";
 import Auth from "./components/Auth";
+import AuthV2Screen from "./components/auth-v2/AuthV2Screen";
 
 import Home from "./components/Home";
 import Catalog from "./components/CatalogScreen";
@@ -81,6 +82,12 @@ export default function Navigate() {
             <Stack.Screen 
                 name="Auth" 
                 component={Auth} 
+                options={{headerShown: false }}
+            />
+
+            <Stack.Screen
+                name="AuthV2"
+                component={AuthV2Screen}
                 options={{headerShown: false }}
             />
 

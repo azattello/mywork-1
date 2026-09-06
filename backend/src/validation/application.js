@@ -11,6 +11,8 @@ const createApplicationSchema = Joi.object({
   categories: Joi.array().items(Joi.string()).optional(),
   workMode: Joi.string().valid('online','offline').optional(),
   address: Joi.string().allow('', null).optional(),
+  latitude: Joi.number().min(-90).max(90).optional(),
+  longitude: Joi.number().min(-180).max(180).optional(),
   deadline: Joi.date().optional(),
   status: Joi.string().valid('open', 'in_progress', 'closed', 'new', 'agreed', 'completed', 'cancelled').optional(),
   currentSpecialist: Joi.string().allow('', null).optional(),
@@ -18,6 +20,20 @@ const createApplicationSchema = Joi.object({
   mode: Joi.string().valid('proposal', 'order').optional(),
   active: Joi.boolean().optional(),
   userID: Joi.string().optional(),
+});
+
+const updateApplicationSchema = Joi.object({
+  title: Joi.string().min(3).optional(),
+  summ: Joi.number().min(0).optional(),
+  budgetType: Joi.string().valid('fixed', 'range').optional(),
+  budgetMin: Joi.number().min(0).optional(),
+  budgetMax: Joi.number().min(0).optional(),
+  info: Joi.string().min(10).allow('', null).optional(),
+  city: Joi.string().allow('', null).optional(),
+  categories: Joi.array().items(Joi.string()).optional(),
+  workMode: Joi.string().valid('online', 'offline').optional(),
+  address: Joi.string().allow('', null).optional(),
+  deadline: Joi.date().optional(),
 });
 
 const responseSchema = Joi.object({
@@ -41,6 +57,7 @@ const reviewSchema = Joi.object({
 
 module.exports = { 
   createApplicationSchema,
+  updateApplicationSchema,
   responseSchema,
   updateStatusSchema,
   reviewSchema

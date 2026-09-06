@@ -68,7 +68,7 @@ export default function CreateResponseWizard({ route, navigation }) {
   const pickPortfolioPhotos = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsMultipleSelection: true,
         quality: 0.7,
         selectionLimit: 3 - form.portfolioPhotos.length,

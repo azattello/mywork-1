@@ -3,6 +3,7 @@ const Joi = require('joi');
 const updateSchema = Joi.object({
   name: Joi.string().max(100).optional(),
   surname: Joi.string().max(100).optional(),
+  phone: Joi.string().max(30).optional(),
   city: Joi.string().regex(/^[0-9a-f]{24}$/).allow(null).optional(),
   categories: Joi.array()
     .items(Joi.string().regex(/^[0-9a-f]{24}$/))

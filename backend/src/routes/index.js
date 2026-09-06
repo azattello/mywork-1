@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const authRoutes = require('./auth');
+const authV2Routes = require('./authV2');
 const convRoutes = require('./conversations');
 const msgRoutes = require('./messages');
 const appRoutes = require('./applications');
@@ -13,6 +14,7 @@ const favoritesRoutes = require('./favorites');
 const complaintsRoutes = require('./complaints');
 
 router.use('/auth', authRoutes);
+router.use('/auth-v2', authV2Routes);
 router.use('/conversations', convRoutes);
 router.use('/messages', msgRoutes);
 router.use('/applications', appRoutes);

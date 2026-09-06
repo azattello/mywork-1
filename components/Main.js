@@ -54,6 +54,7 @@ import ReviewScreen from './ReviewScreen';
 import SettingsScreen from './SettingsScreen';
 import AboutAppScreen from './AboutAppScreen';
 import DocumentViewerScreen from './DocumentViewerScreen';
+import RequestMapFeedScreen from './request-map/RequestMapFeedScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -125,6 +126,9 @@ function TabPro({ unreadChatsCount = 0 }) {
             case 'Лента':
               iconName = focused ? 'flash' : 'flash-outline';
               break;
+            case 'Карта заявок':
+              iconName = focused ? 'map' : 'map-outline';
+              break;
             case 'Аккаунт':
               iconName = focused ? 'person-circle' : 'person-circle-outline';
               break;
@@ -143,6 +147,7 @@ function TabPro({ unreadChatsCount = 0 }) {
       <Tab.Screen name="Входящие" component={IncomingApplicationsScreen} />
       <Tab.Screen name="Чаты" component={ChatListScreen} />
       <Tab.Screen name="Лента" component={AvailableApplicationsScreen} />
+      <Tab.Screen name="Карта заявок" component={RequestMapFeedScreen} />
       <Tab.Screen name="Аккаунт" component={AccountPro} />
     </Tab.Navigator>
   );
@@ -276,6 +281,11 @@ export default function Main({navigation}) {
         <Stack.Screen
           name={'AvailableApplications'}
           component={AvailableApplicationsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name={'RequestMapFeed'}
+          component={RequestMapFeedScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen

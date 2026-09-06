@@ -1,6 +1,7 @@
 const Application = require('../models/Application');
 const User = require('../models/User');
 const notificationController = require('./notificationController');
+const { geocodeAddress } = require('../services/geocodingService');
 
 const normalizeApplicationStatus = (value) => {
   if (!value) return 'open';
@@ -45,6 +46,19 @@ exports.create = async (req, res) => {
     return res.status(403).json({ success: false, message: 'Specialists cannot create applications' });
   }
 
+  let coordinates;
+  if (address && address.trim()) {
+    try {
+      const cityDoc = city ? await require('../models/City').findById(city).select('name').lean() : null;
+      coordinates = await geocodeAddress(address.trim(), cityDoc?.name);
+    } catch (error) {
+      return res.status(502).json({ success: false, message: 'Не удалось определить координаты адреса' });
+    }
+    if (!coordinates) {
+      return res.status(422).json({ success: false, message: 'Адрес не найден. Проверьте адрес и попробуйте снова' });
+    }
+  }
+
   // Optionally resolve currentSpecialist if provided
   let specialist = null;
   if (currentSpecialist) {
@@ -82,6 +96,8 @@ exports.create = async (req, res) => {
     budgetMax: budgetMax ? Number(budgetMax) : undefined,
     workMode: workMode || 'online',
     address: address || undefined,
+    latitude: coordinates?.latitude,
+    longitude: coordinates?.longitude,
     deadline: deadline ? new Date(deadline) : undefined,
     active: typeof active === 'boolean' ? active : true,
     user: user._id,
@@ -106,6 +122,43 @@ exports.create = async (req, res) => {
   }
 
   res.status(201).json({ success: true, data: app });
+};
+
+exports.update = async (req, res) => {
+  const { id } = req.params;
+  const app = await Application.findById(id);
+  if (!app) return res.status(404).json({ success: false, message: 'Application not found' });
+  if (String(app.user) !== String(req.user._id)) {
+    return res.status(403).json({ success: false, message: 'Only the owner can edit this application' });
+  }
+
+  const updates = { ...req.body };
+  if (Object.prototype.hasOwnProperty.call(updates, 'address')) {
+    if (!updates.address || !updates.address.trim()) {
+      delete updates.latitude;
+      delete updates.longitude;
+    } else {
+      try {
+        const cityId = updates.city || app.city;
+        const cityDoc = cityId ? await require('../models/City').findById(cityId).select('name').lean() : null;
+        const coordinates = await geocodeAddress(updates.address.trim(), cityDoc?.name);
+        if (!coordinates) {
+          return res.status(422).json({ success: false, message: 'Адрес не найден. Проверьте адрес и попробуйте снова' });
+        }
+        updates.latitude = coordinates.latitude;
+        updates.longitude = coordinates.longitude;
+      } catch (error) {
+        return res.status(502).json({ success: false, message: 'Не удалось определить координаты адреса' });
+      }
+    }
+  }
+
+  const allowed = ['title', 'summ', 'info', 'city', 'categories', 'budgetType', 'budgetMin', 'budgetMax', 'workMode', 'address', 'deadline', 'latitude', 'longitude'];
+  const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => allowed.includes(key)));
+  const updated = await Application.findByIdAndUpdate(id, { $set: safeUpdates }, { new: true })
+    .populate('city', 'name')
+    .populate('categories', 'name');
+  res.json({ success: true, data: updated });
 };
 
 exports.getByUser = async (req, res) => {

@@ -7,7 +7,7 @@ const reviewController = require('../controllers/reviewController');
 const applicationChatController = require('../controllers/applicationChatController');
 const validate = require('../middlewares/validate');
 const auth = require('../middlewares/auth');
-const { createApplicationSchema } = require('../validation/application');
+const { createApplicationSchema, updateApplicationSchema } = require('../validation/application');
 const upload = require('../middlewares/upload');
 
 // Создание и получение заявок
@@ -15,6 +15,7 @@ router.post('/', auth, validate(createApplicationSchema), applicationController.
 router.get('/', applicationController.getAll);
 router.get('/user/:userId', applicationController.getByUser);
 router.get('/specialist/:specialistId', applicationController.getBySpecialist);
+router.put('/:id', auth, validate(updateApplicationSchema), applicationController.update);
 // Get single application by id
 router.get('/:id', applicationController.getById);
 

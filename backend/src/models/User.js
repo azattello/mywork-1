@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   phone: { type: String, required: true, unique: true },
+  phoneVerified: { type: Boolean, default: false },
+  twoFactorEnabled: { type: Boolean, default: false },
   passwordHash: { type: String, required: true },
   name: { type: String },
   surname: { type: String },

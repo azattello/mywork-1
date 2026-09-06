@@ -52,7 +52,7 @@ exports.getUserById = async (req, res) => {
 exports.updateMe = async (req, res) => {
   const updates = {};
   const allowed = [
-    'name', 'surname', 'avatarUrl', 'isAvailable', 'city', 'categories', 'about', 'portfolio',
+    'name', 'surname', 'phone', 'avatarUrl', 'isAvailable', 'city', 'categories', 'about', 'portfolio',
     'minPrice', 'maxPrice', 'yearsOfExperience', 'workMode', 'latitude', 'longitude', 'serviceRadius'
   ];
   allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });

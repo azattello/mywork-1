@@ -11,8 +11,9 @@ import {
   SafeAreaView,
 } from 'react-native';
 import axios from 'axios';
+import { API_URL } from '../config';
 
-const API_URL = 'http://172.20.10.2:4000/api';
+const API_ENDPOINT = `${API_URL}/api`;
 
 /**
  * CityPicker - компонент для выбора города
@@ -36,7 +37,7 @@ const CityPicker = ({ onSelect, selectedCityId }) => {
   const loadCities = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/cities`);
+      const response = await axios.get(`${API_ENDPOINT}/cities`);
       if (response.data.success) {
         const data = response.data.data;
         setCities(data);

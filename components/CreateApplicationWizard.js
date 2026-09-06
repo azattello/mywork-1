@@ -38,6 +38,7 @@ export default function CreateApplicationWizard({ navigation }) {
     categories: [],
     city: '',
     workMode: 'online',
+    address: '',
     budgetType: 'fixed',
     summ: '',
     budgetMin: '',
@@ -91,7 +92,7 @@ export default function CreateApplicationWizard({ navigation }) {
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsMultipleSelection: true,
         quality: 0.7,
         selectionLimit: 5 - form.photos.length,
@@ -127,6 +128,7 @@ export default function CreateApplicationWizard({ navigation }) {
         return null;
       case 3:
         if (!form.city) return 'Выберите город';
+        if (form.workMode === 'offline' && !form.address.trim()) return 'Укажите адрес для работы на месте';
         return null;
       case 4:
         if (form.budgetType === 'fixed') {
@@ -175,6 +177,7 @@ export default function CreateApplicationWizard({ navigation }) {
         categories: form.categories,
         city: form.city,
         workMode: form.workMode,
+        address: form.address.trim() || undefined,
         budgetType: form.budgetType,
         summ: form.budgetType === 'fixed' ? parseInt(form.summ) : 0,
         budgetMin: form.budgetType === 'range' ? parseInt(form.budgetMin) : 0,
@@ -375,6 +378,20 @@ export default function CreateApplicationWizard({ navigation }) {
                   ))}
                 </View>
               </View>
+
+              {form.workMode === 'offline' && (
+                <View style={styles.section}>
+                  <Text style={styles.label}>Адрес *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Например: г. Астана, ул. Кабанбай батыра, 15"
+                    value={form.address}
+                    onChangeText={(address) => setForm((f) => ({ ...f, address }))}
+                    placeholderTextColor="#ccc"
+                  />
+                  <Text style={styles.hint}>Адрес автоматически преобразуется в координаты для карты</Text>
+                </View>
+              )}
 
               {/* City Modal */}
               <Modal visible={cityModalVisible} transparent animationType="slide">
@@ -584,6 +601,13 @@ export default function CreateApplicationWizard({ navigation }) {
                 <Text style={styles.reviewLabel}>Режим работы</Text>
                 <Text style={styles.reviewValue}>{form.workMode === 'online' ? 'Онлайн' : 'На месте'}</Text>
               </View>
+
+              {form.address ? (
+                <View style={styles.reviewSection}>
+                  <Text style={styles.reviewLabel}>Адрес</Text>
+                  <Text style={styles.reviewValue}>{form.address}</Text>
+                </View>
+              ) : null}
 
               <View style={styles.reviewSection}>
                 <Text style={styles.reviewLabel}>Бюджет</Text>

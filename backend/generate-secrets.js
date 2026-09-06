@@ -27,7 +27,7 @@ console.log('JWT_EXPIRES_IN=15m');
 console.log('REFRESH_TOKEN_EXPIRES_IN=7d');
 console.log('PORT=4000');
 console.log('NODE_ENV=production');
-console.log('MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo?retryWrites=true&w=majority');
+console.log('MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork?retryWrites=true&w=majority');
 
 console.log('\n' + '='.repeat(70) + '\n');
 

@@ -159,7 +159,7 @@ npm install --production
 6. Нажми на созданный кластер → "Connect" → "Drivers" (Node.js)
 7. Скопируй Connection String (похожа на):
    ```
-   mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo?retryWrites=true&w=majority
+   mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork?retryWrites=true&w=majority
    ```
 
 **ВАЖНО:**
@@ -184,7 +184,7 @@ nano .env
 ```
 PORT=4000
 NODE_ENV=production
-MONGO_URI=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/yoyo?retryWrites=true&w=majority
+MONGO_URI=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/mywork?retryWrites=true&w=majority
 JWT_SECRET=<вставь значение из шага 1>
 JWT_EXPIRES_IN=15m
 REFRESH_TOKEN_EXPIRES_IN=7d

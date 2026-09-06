@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "yoyo",
-    "slug": "yoyo",
+    "name": "mywork",
+    "slug": "mywork",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
@@ -19,17 +19,17 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.azattello.yoyo"
+      "package": "com.azattello.mywork"
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "7637746b-aeb7-4e78-9b86-3a76e60753b2"
+        "projectId": "5071b22c-91e7-4da3-bf73-d1da0de4aea9"
       }
     }
   }

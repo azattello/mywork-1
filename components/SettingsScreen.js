@@ -12,6 +12,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { resetToAuth } from '../navigate';
+import { API_URL } from '../config';
 
 export default function SettingsScreen({ navigation }) {
   const [deleting, setDeleting] = useState(false);
@@ -38,7 +39,7 @@ export default function SettingsScreen({ navigation }) {
   const deleteAccountConfirmed = async () => {
     setDeleting(true);
     try {
-      const res = await fetch('http://172.20.10.2:4000/api/users/me', {
+      const res = await fetch(`${API_URL}/api/users/me`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${await AsyncStorage.getItem('@accessToken')}`,

@@ -40,6 +40,8 @@ const applicationSchema = new mongoose.Schema(
       default: "online",
     },
     address: { type: String }, // Адрес для офлайн работы
+    latitude: { type: Number, min: -90, max: 90 },
+    longitude: { type: Number, min: -180, max: 180 },
     // Сроки
     deadline: { type: Date },
     active: { type: Boolean, default: true },

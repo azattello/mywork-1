@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../utils/apiClient';
+import { API_URL } from '../config';
 
 const ReviewsScreen = ({ route, navigation }) => {
   const { userId } = route.params;
@@ -244,7 +245,7 @@ const ReviewsScreen = ({ route, navigation }) => {
         )}
 
         {reviewImage && (
-          <Image source={{ uri: reviewImage.startsWith('/uploads/') ? `http://172.20.10.2:4000${reviewImage}` : reviewImage }} style={styles.reviewImage} resizeMode="cover" />
+          <Image source={{ uri: reviewImage.startsWith('/uploads/') ? `${API_URL}${reviewImage}` : reviewImage }} style={styles.reviewImage} resizeMode="cover" />
         )}
       </View>
     );

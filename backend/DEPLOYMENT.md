@@ -67,7 +67,7 @@ npm install --production
 4. Добавь свой IP адрес (194.32.142.33) в IP Whitelist
 5. Создай пользователя БД (логин и пароль)
 6. Скопируй строку подключения (Connection String)
-   - Должна выглядеть как: `mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo?retryWrites=true&w=majority`
+   - Должна выглядеть как: `mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork?retryWrites=true&w=majority`
 
 ## Шаг 6: Настройка .env на сервере
 
@@ -79,7 +79,7 @@ nano .env
 Добавь следующее (замени на реальные значения):
 ```
 PORT=4000
-MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo?retryWrites=true&w=majority
+MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork?retryWrites=true&w=majority
 JWT_SECRET=your_super_secret_key_min_32_chars_random_string_12345678
 JWT_EXPIRES_IN=15m
 REFRESH_TOKEN_EXPIRES_IN=7d
@@ -197,8 +197,8 @@ MongoDB Atlas сам делает резервные копии, но можно
 
 ```bash
 # Экспорт данных
-mongodump --uri "mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo" --out /var/backups/yoyo
+mongodump --uri "mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork" --out /var/backups/mywork
 
 # Импорт данных
-mongorestore --uri "mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/yoyo" /var/backups/yoyo
+mongorestore --uri "mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/mywork" /var/backups/mywork
 ```

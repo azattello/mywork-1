@@ -399,7 +399,7 @@ export const API_URL = process.env.API_URL || 'http://172.20.10.2:4000';
 ```bash
 # backend/src/config/db.js должен содержать
 const connectDB = async () => {
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/yoyo');
+  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost/mywork');
 };
 ```
 
@@ -446,7 +446,7 @@ curl http://localhost:4000/api/health
 
 # 2. MongoDB работает
 mongosh
-> use yoyo
+> use mywork
 > db.users.find()
 
 # 3. Есть хотя бы один user с role='specialist'
